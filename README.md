@@ -2,57 +2,90 @@
 
 Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + PyQt6.
 
-![Python](https://img.shields.io/badge/Python-3.14-blue?logo=python)
+![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-green?logo=qt)
-![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightgrey?logo=windows)
+![Platform](https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows)
+![Platform](https://img.shields.io/badge/Linux-Ubuntu%2FDebian-E95420?logo=ubuntu)
+![Platform](https://img.shields.io/badge/macOS-12+-000000?logo=apple)
 ![License](https://img.shields.io/badge/License-MIT-purple)
+
+---
+
+## Screenshots
+
+### Monitor de Hosts
+![Monitor](screenshots/monitor.png)
+> Monitoramento em tempo real com gráfico de RTT, estatísticas e exportação CSV/JSON.
+
+### Port Scan
+![Port Scan](screenshots/portscan.png)
+> Varredura TCP/UDP com progresso em tempo real, presets e suporte a UDP open|filtered.
+
+### Banner Grab / TLS
+![Banner TLS](screenshots/banner.png)
+> Inspeção de banner HTTP e detalhes do certificado TLS/SSL.
+
+### Traceroute
+![Traceroute](screenshots/traceroute.png)
+> Traceroute ICMP com resolução DNS reversa por hop.
 
 ---
 
 ## Funcionalidades
 
-### Monitor de Hosts
-- Monitoramento simultâneo de múltiplos hosts via TCP, ICMP ou UDP
-- Gráfico de RTT em tempo real por host
-- Estatísticas: RTT atual, média, mínimo, máximo e perda de pacotes
-- Salva e restaura automaticamente a lista de hosts entre sessões
-- Exportar histórico de RTT de cada host para CSV
-- Exportar resumo de todos os hosts para CSV ou JSON
-
-### Port Scan
-- Varredura TCP e UDP com controle de concorrência
-- Presets: Top 20, Top 100, Todas as portas (1–65535) ou intervalo personalizado
-- Barra de progresso em tempo real
-- Suporte a TCP+UDP simultâneo
-- Opção de exibir portas UDP `open|filtered` (sem resposta ICMP unreachable)
-
-### Banner Grab / TLS
-- Conexão TCP com envio de requisição HTTP HEAD
-- Inspeção TLS/SSL: versão do protocolo, cipher suite, CN do certificado e validade
-
-### Traceroute
-- Traceroute ICMP com TTL crescente
-- Resolução DNS reversa por hop (com timeout de 2s para não travar)
-- Tabela com hop, IP, hostname, RTT e notas
+| Aba | Recursos |
+|-----|----------|
+| **Monitor** | Multi-host TCP/ICMP/UDP, gráfico RTT, stats, exportar CSV/JSON, salva sessão |
+| **Port Scan** | TCP+UDP, Top 20/100/All, progress bar, UDP open\|filtered, exportar CSV |
+| **Banner/TLS** | Banner HTTP, versão TLS, cipher suite, CN e validade do certificado |
+| **Traceroute** | ICMP TTL, DNS reverso com timeout 2s por hop, tabela Hop/IP/RTT |
 
 ---
 
-## Requisitos
+## Download
 
-| Componente | Versão mínima |
-|------------|---------------|
-| Python     | 3.11+         |
-| PyQt6      | 6.6+          |
-| pyqtgraph  | 0.13+         |
-| darkdetect | 0.8+          |
-| Windows    | 10 / 11 (64-bit) |
+Baixe o executável na página de [**Releases**](https://github.com/heitortpf/nocping/releases) — sem instalar Python ou dependências.
 
-> **ICMP e UDP** requerem execução como **Administrador**.  
-> **TCP Port Scan** funciona sem privilégios elevados.
+| Sistema | Arquivo |
+|---------|---------|
+| Windows 10/11 (64-bit) | `NOCPing-Windows.exe` |
+| Linux (Ubuntu/Debian x64) | `NOCPing-Linux` |
+| macOS 12+ (ARM/Intel) | `NOCPing-macOS` |
 
 ---
 
-## Instalação
+## Como usar
+
+### Windows
+1. Baixe `NOCPing-Windows.exe`
+2. Clique duas vezes para abrir
+3. Para ICMP e UDP: clique com botão direito → **Executar como administrador**
+
+### Linux
+```bash
+chmod +x NOCPing-Linux
+./NOCPing-Linux
+
+# Para ICMP e UDP (requer root):
+sudo ./NOCPing-Linux
+```
+
+### macOS
+```bash
+chmod +x NOCPing-macOS
+# Primeira execução — liberar Gatekeeper:
+xattr -cr NOCPing-macOS
+./NOCPing-macOS
+
+# Para ICMP e UDP (requer root):
+sudo ./NOCPing-macOS
+```
+
+> **Nota:** TCP Port Scan funciona sem privilégios em todos os sistemas.
+
+---
+
+## Instalar via código-fonte
 
 ```bash
 git clone https://github.com/heitortpf/nocping.git
@@ -61,18 +94,23 @@ pip install -r requirements.txt
 python main.py
 ```
 
+**Requisitos:**
+
+| Dependência | Versão mínima |
+|-------------|---------------|
+| Python      | 3.11+         |
+| PyQt6       | 6.6+          |
+| pyqtgraph   | 0.13+         |
+| darkdetect  | 0.8+          |
+
 ---
 
-## Executável standalone
-
-Baixe o `NOCPing.exe` na página de [Releases](https://github.com/heitortpf/nocping/releases) e execute diretamente — sem instalar Python ou qualquer dependência.
-
-Para gerar o `.exe` localmente:
+## Gerar o executável localmente
 
 ```bash
 pip install pyinstaller
-python -m PyInstaller --onefile --windowed --name "NOCPing" main.py
-# Saída: dist/NOCPing.exe
+python -m PyInstaller --onefile --windowed --name NOCPing --icon NOCPing.ico main.py
+# Saída: dist/NOCPing.exe  (ou NOCPing no Linux/macOS)
 ```
 
 ---
@@ -80,14 +118,21 @@ python -m PyInstaller --onefile --windowed --name "NOCPing" main.py
 ## Testes
 
 ```bash
-# Todos os testes (CI-safe, sem rede ou admin):
+# CI-safe (sem rede ou admin):
 pytest tests/ -v -m "not live"
 
-# Incluindo testes que requerem rede:
+# Completo (requer rede):
 pytest tests/ -v
 ```
 
-65 testes automatizados cobrindo: `core/network`, `core/config_store`, `ui/widgets/_utils` e workers Qt.
+65 testes automatizados cobrindo `core/network`, `core/config_store`, `ui/widgets/_utils` e QThread workers.
+
+---
+
+## Tema claro / escuro
+
+Detectado automaticamente pelo SO via `darkdetect`. Alternar manualmente: `Ctrl+T`.  
+Múltiplas janelas com `Ctrl+N` sincronizam o tema entre si.
 
 ---
 
@@ -116,12 +161,6 @@ tests/
   test_rtt_utils.py
   test_workers.py
 ```
-
----
-
-## Tema claro / escuro
-
-O tema é detectado automaticamente pelo sistema operacional via `darkdetect`. Para alternar manualmente: `Ctrl+T`. Múltiplas janelas (`Ctrl+N`) sincronizam o tema entre si.
 
 ---
 
