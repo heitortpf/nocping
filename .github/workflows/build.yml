@@ -48,6 +48,10 @@ jobs:
       - name: Instalar dependências Python
         run: pip install PyQt6 pyqtgraph darkdetect pyinstaller
 
+      - name: Instalar Pillow (macOS — converte .ico → .icns)
+        if: runner.os == 'macOS'
+        run: pip install Pillow
+
       - name: Build executável
         run: >
           python -m PyInstaller
