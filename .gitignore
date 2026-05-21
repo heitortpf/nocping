@@ -31,11 +31,12 @@ desktop.ini
 # App data
 nocping_hosts.json
 
-# Agent framework (não faz parte do projeto)
+# Agent framework e Claude Code (não fazem parte do projeto)
 .agent/
-
-# Claude Code local settings
 .claude/
+
+# Docs de desenvolvimento (não distribuir)
+CLAUDE.md
 
 # IDE
 .vscode/
