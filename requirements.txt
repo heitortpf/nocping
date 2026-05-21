@@ -1,0 +1,5 @@
+PyQt6>=6.6.0
+pyqtgraph>=0.13.0
+darkdetect>=0.8.0
+pyinstaller>=6.0.0
+pytest>=8.0.0
