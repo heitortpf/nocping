@@ -1,0 +1,96 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: NOCPing.exe
+            asset_name: NOCPing-Windows.exe
+          - os: ubuntu-latest
+            artifact_name: NOCPing
+            asset_name: NOCPing-Linux
+          - os: macos-latest
+            artifact_name: NOCPing
+            asset_name: NOCPing-macOS
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Dependências de sistema (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libgl1 libegl1 libdbus-1-3 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 \
+            libxcb-xfixes0 libxkbcommon-x11-0 libxcb-cursor0
+
+      - name: Instalar dependências Python
+        run: pip install PyQt6 pyqtgraph darkdetect pyinstaller
+
+      - name: Build executável
+        run: >
+          python -m PyInstaller
+          --onefile --windowed
+          --name NOCPing
+          --icon NOCPing.ico
+          --hidden-import PyQt6.sip
+          --hidden-import darkdetect
+          --hidden-import pyqtgraph
+          --add-data "NOCPing.ico:."
+          main.py
+
+      - name: Upload artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: dist/${{ matrix.artifact_name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar artefatos
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Preparar arquivos
+        run: |
+          cp artifacts/NOCPing-Windows.exe/NOCPing.exe NOCPing-Windows.exe
+          cp artifacts/NOCPing-Linux/NOCPing           NOCPing-Linux
+          cp artifacts/NOCPing-macOS/NOCPing           NOCPing-macOS
+          chmod +x NOCPing-Linux NOCPing-macOS
+
+      - name: Criar Release no GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          name: NOCPing ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            NOCPing-Windows.exe
+            NOCPing-Linux
+            NOCPing-macOS
