@@ -251,3 +251,22 @@ def test_udp_payload_differs_between_protocols():
 def test_udp_payload_custom_length():
     payload = _get_udp_payload(9999, 32)
     assert payload == b"A" * 32
+
+def test_udp_payload_dhcp_magic_cookie():
+    payload = _get_udp_payload(67, 0)
+    assert len(payload) == 300
+    assert payload[0] == 0x01                          # BOOTREQUEST
+    assert payload[236:240] == b"\x63\x82\x53\x63"    # magic cookie
+    assert payload[242] == 0x01                        # DHCP Discover option
+
+def test_udp_payload_netbios_length():
+    payload = _get_udp_payload(137, 0)
+    assert len(payload) >= 12
+    assert payload[4] == 0x00 and payload[5] == 0x01   # QDCOUNT = 1
+
+def test_udp_payload_mdns_ptr_query():
+    payload = _get_udp_payload(5353, 0)
+    assert b"_services" in payload
+    assert b"_dns-sd" in payload
+    assert b"local" in payload
+    assert payload[4:6] == b"\x00\x01"                 # QDCOUNT = 1

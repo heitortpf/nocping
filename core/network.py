@@ -4,7 +4,6 @@ Funções de rede puras: sem GUI, sem saída no terminal.
 """
 import asyncio
 import os
-import sys
 import socket
 import struct
 import select
@@ -222,13 +221,47 @@ def _get_udp_payload(port: int, length: int) -> bytes:
             "aaaa010000010000000000000667"
             "6f6f676c6503636f6d0000010001"
         )
+    if port == 67:
+        # DHCP Discover (mínimo válido: op=1, htype=1, hlen=6, magic cookie)
+        pkt = bytearray(300)
+        pkt[0] = 0x01   # op: BOOTREQUEST
+        pkt[1] = 0x01   # htype: Ethernet
+        pkt[2] = 0x06   # hlen
+        pkt[3] = 0x00   # hops
+        pkt[4:8] = b"\xde\xad\xbe\xef"  # xid
+        pkt[236:240] = b"\x63\x82\x53\x63"  # magic cookie
+        pkt[240] = 0x35; pkt[241] = 0x01; pkt[242] = 0x01  # DHCP Discover
+        pkt[243] = 0xff  # end option
+        return bytes(pkt)
     if port == 123:
         return b"\x1b" + b"\x00" * 47
+    if port == 137:
+        # NetBIOS Name Service — Node Status Request para "*"
+        return bytes.fromhex(
+            "a78f00000001000000000000"
+            "20434b4141414141414141414141414141"
+            "4141414141414141414141414141410000210001"
+        )
     if port == 161:
         return bytes.fromhex(
             "302602010104067075626c6963"
             "a01902042171c7b8020100020100"
             "300b300906052b060102010500"
+        )
+    if port == 5353:
+        # mDNS query para _services._dns-sd._udp.local (tipo PTR, classe IN)
+        return (
+            b"\x00\x00"              # transaction ID
+            b"\x00\x00"              # flags: standard query
+            b"\x00\x01"              # questions: 1
+            b"\x00\x00\x00\x00\x00\x00"  # answers / authority / additional: 0
+            b"\x09_services"
+            b"\x07_dns-sd"
+            b"\x04_udp"
+            b"\x05local"
+            b"\x00"                  # root label
+            b"\x00\x0c"              # type PTR
+            b"\x00\x01"              # class IN
         )
     return b"nocping-probe\r\n\r\n"
 
@@ -549,7 +582,8 @@ def traceroute_hop(target_ip: str, family: int, ttl: int, seq: int, pid: int,
                 continue
             i_type = icmp[0]
             from_ip = addr[0]
-            if i_type == 11:  # Time Exceeded
+            time_exceeded = 3 if is_ipv6 else 11
+            if i_type == time_exceeded:  # Time Exceeded (ICMPv4=11, ICMPv6=3)
                 result["from_ip"] = from_ip
                 result["elapsed_ms"] = ms
                 return result

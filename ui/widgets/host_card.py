@@ -6,13 +6,14 @@ import csv
 
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QButtonGroup, QSizePolicy, QFileDialog,
+    QPushButton, QButtonGroup, QFileDialog,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 
 from core.models import ProbeConfig, ProbeMode, IPVersion, HostStatus, PingResult
 from core.workers import PingWorker
+from core.history_store import HistoryStore
 from .rtt_graph import RttGraph
 from ._utils import rtt_color as _rtt_color
 
@@ -48,7 +49,8 @@ def _stat_col(label: str, value_widget: QLabel) -> QVBoxLayout:
 
 
 class HostCard(QFrame):
-    removed = pyqtSignal(object)
+    removed        = pyqtSignal(object)
+    status_changed = pyqtSignal(str, object, object)  # host, old, new
 
     def __init__(self, config: ProbeConfig, parent=None):
         super().__init__(parent)
@@ -219,14 +221,23 @@ class HostCard(QFrame):
         self._graph.setFixedHeight(80)
         body_layout.addWidget(self._graph)
 
-        btn_export_rtt = QPushButton("⬇ Exportar RTT")
-        btn_export_rtt.setFlat(True)
-        btn_export_rtt.setStyleSheet(
+        _link_style = (
             "QPushButton{color:#7c3aed;font-size:10px;border:none;background:transparent;}"
             "QPushButton:hover{color:#6d28d9;text-decoration:underline;}"
         )
+        footer_row = QHBoxLayout()
+        btn_history = QPushButton("⏱ Histórico")
+        btn_history.setFlat(True)
+        btn_history.setStyleSheet(_link_style)
+        btn_history.clicked.connect(self._open_history)
+        footer_row.addWidget(btn_history, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        btn_export_rtt = QPushButton("⬇ Exportar RTT")
+        btn_export_rtt.setFlat(True)
+        btn_export_rtt.setStyleSheet(_link_style)
         btn_export_rtt.clicked.connect(self._export_rtt)
-        body_layout.addWidget(btn_export_rtt, alignment=Qt.AlignmentFlag.AlignRight)
+        footer_row.addWidget(btn_export_rtt, alignment=Qt.AlignmentFlag.AlignRight)
+        body_layout.addLayout(footer_row)
 
         # Divisor
         body_layout.addWidget(_hline())
@@ -302,6 +313,7 @@ class HostCard(QFrame):
 
     def _on_result(self, r: PingResult):
         self._results.append(r)
+        HistoryStore.instance().record(self.config.host, r)
         timeout = not r.success or r.elapsed_ms <= 0
         self._graph.add_point(r.elapsed_ms if not timeout else 0.0, timeout)
 
@@ -342,7 +354,7 @@ class HostCard(QFrame):
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
 
-    def _on_finished(self, stats: dict):
+    def _on_finished(self, _stats: dict):
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
 
@@ -355,6 +367,11 @@ class HostCard(QFrame):
                     self._worker.wait(400)
                     self.start()
                 break
+
+    def _open_history(self):
+        from ui.widgets.history_dialog import HistoryDialog
+        dlg = HistoryDialog(self.config.host, self)
+        dlg.exec()
 
     def _export_rtt(self):
         if not self._results:
@@ -373,6 +390,7 @@ class HostCard(QFrame):
                 writer.writerow([r.seq, r.success, f"{r.elapsed_ms:.3f}", r.note])
 
     def _set_status(self, status: HostStatus):
+        old = self._status
         self._status = status
         c = STATUS_COLOR[status]
         self._indicator.setStyleSheet(f"color:{c}; font-size:16px;")
@@ -380,6 +398,8 @@ class HostCard(QFrame):
         self._lbl_status_text.setStyleSheet(
             f"color:{c}; font-size:10px; font-weight:bold;"
         )
+        if old != status and status in (HostStatus.UP, HostStatus.DOWN, HostStatus.ERROR):
+            self.status_changed.emit(self.config.host, old, status)
 
     def _reset_stats(self):
         for w in (self._val_rtt, self._val_avg, self._val_loss):

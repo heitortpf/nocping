@@ -3,13 +3,14 @@ NOCPing — ui/main_window.py
 Janela principal com abas, menu e barra de status.
 """
 import os
-import sys
 import tempfile
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QTabWidget, QStatusBar,
-    QLabel, QMessageBox, QPushButton, QApplication,
+    QMainWindow, QTabWidget,
+    QLabel, QMessageBox, QPushButton, QApplication, QFileDialog,
+    QSystemTrayIcon, QMenu,
 )
+from PyQt6.QtCore import QSettings
 from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QAction, QPalette, QColor, QPainter, QPixmap, QPolygonF
 
@@ -17,6 +18,7 @@ from .monitor_tab import MonitorTab
 from .scan_tab import ScanTab
 from .banner_tab import BannerTab
 from .traceroute_tab import TracerouteTab
+from .mtr_tab import MTRTab
 from core.network import is_admin
 
 
@@ -202,7 +204,6 @@ class MainWindow(QMainWindow):
         self.resize(1100, 700)
         self.setMinimumSize(800, 500)
 
-        # Herda tema da janela já aberta; na primeira, detecta o sistema
         self._is_dark = (
             MainWindow._instances[0]._is_dark
             if MainWindow._instances
@@ -210,10 +211,17 @@ class MainWindow(QMainWindow):
         )
         MainWindow._instances.append(self)
 
+        self._settings = QSettings("NOCPing", "NOCPing")
+        self._notif_enabled: bool = self._settings.value(
+            "notifications_enabled", True, type=bool
+        )
+
         self._build_menu()
         self._build_tabs()
         self._build_status_bar()
+        self._build_tray()
         self._apply_window_theme()
+        QApplication.instance().aboutToQuit.connect(self._shutdown)
 
     def _build_menu(self):
         menu = self.menuBar()
@@ -224,10 +232,22 @@ class MainWindow(QMainWindow):
         act_new.triggered.connect(self._open_new_window)
         file_menu.addAction(act_new)
         file_menu.addSeparator()
+        act_shot = QAction("Salvar Screenshot...", self)
+        act_shot.setShortcut("Ctrl+P")
+        act_shot.triggered.connect(self._save_screenshot)
+        file_menu.addAction(act_shot)
+        file_menu.addSeparator()
         act_quit = QAction("Sair", self)
         act_quit.setShortcut("Ctrl+Q")
-        act_quit.triggered.connect(self.close)
+        act_quit.triggered.connect(QApplication.quit)
         file_menu.addAction(act_quit)
+
+        view_menu = menu.addMenu("Visualizar")
+        self._act_notif = QAction("Notificações de host", self)
+        self._act_notif.setCheckable(True)
+        self._act_notif.setChecked(self._notif_enabled)
+        self._act_notif.triggered.connect(self._toggle_notifications)
+        view_menu.addAction(self._act_notif)
 
         help_menu = menu.addMenu("Ajuda")
         act_about = QAction("Sobre NOCPing", self)
@@ -247,14 +267,17 @@ class MainWindow(QMainWindow):
 
         self._monitor = MonitorTab()
         self._monitor.status_changed.connect(self._update_status_bar)
+        self._monitor.host_status_changed.connect(self._on_host_status_changed)
         self._scan = ScanTab()
         self._banner = BannerTab()
         self._traceroute = TracerouteTab()
+        self._mtr = MTRTab()
 
         self._tabs.addTab(self._monitor,    "⬤  Monitor")
         self._tabs.addTab(self._scan,       "🔍  Port Scan")
         self._tabs.addTab(self._banner,     "🔒  Banner / TLS")
         self._tabs.addTab(self._traceroute, "📡  Traceroute")
+        self._tabs.addTab(self._mtr,        "📊  MTR")
         self.setCentralWidget(self._tabs)
 
     def _build_status_bar(self):
@@ -288,6 +311,50 @@ class MainWindow(QMainWindow):
             self._btn_theme.setToolTip("Alternar para tema escuro")
         self._btn_theme.adjustSize()
 
+    def _build_tray(self):
+        icon = self.windowIcon()
+        self._tray = QSystemTrayIcon(icon, self)
+
+        tray_menu = QMenu()
+        act_show = tray_menu.addAction("Abrir NOCPing")
+        act_show.triggered.connect(self._show_from_tray)
+        tray_menu.addSeparator()
+        act_quit = tray_menu.addAction("Sair")
+        act_quit.triggered.connect(QApplication.quit)
+
+        self._tray.setContextMenu(tray_menu)
+        self._tray.setToolTip("NOCPing")
+        self._tray.activated.connect(self._on_tray_activated)
+        self._tray.show()
+
+    def _show_from_tray(self):
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self._show_from_tray()
+
+    def _toggle_notifications(self, checked: bool):
+        self._notif_enabled = checked
+        self._settings.setValue("notifications_enabled", checked)
+
+    def _on_host_status_changed(self, host: str, old, new):
+        from core.models import HostStatus
+        if not self._notif_enabled:
+            return
+        if new == HostStatus.DOWN:
+            self._tray.showMessage(
+                "Host offline", f"{host} está OFFLINE",
+                QSystemTrayIcon.MessageIcon.Critical, 4000,
+            )
+        elif new == HostStatus.UP and old == HostStatus.DOWN:
+            self._tray.showMessage(
+                "Host online", f"{host} voltou ONLINE",
+                QSystemTrayIcon.MessageIcon.Information, 3000,
+            )
+
     def _open_new_window(self):
         win = MainWindow()
         win.show()
@@ -307,6 +374,17 @@ class MainWindow(QMainWindow):
         self._lbl_up.setText(f"▲ Up: {up}")
         self._lbl_down.setText(f"▼ Down: {down}")
 
+    def _save_screenshot(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Salvar Screenshot", "nocping_screenshot.png",
+            "Imagens (*.png *.jpg)",
+        )
+        if not path:
+            return
+        screen = QApplication.primaryScreen()
+        px = screen.grabWindow(int(self.winId()))
+        px.save(path)
+
     def _show_about(self):
         QMessageBox.about(
             self,
@@ -319,6 +397,14 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event):
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            event.ignore()
+            self.hide()
+            return
+        self._shutdown()
+        event.accept()
+
+    def _shutdown(self):
         try:
             MainWindow._instances.remove(self)
         except ValueError:
@@ -330,4 +416,6 @@ class MainWindow(QMainWindow):
         if self._traceroute._worker and self._traceroute._worker.isRunning():
             self._traceroute._worker.stop()
             self._traceroute._worker.wait(500)
-        super().closeEvent(event)
+        if self._mtr._worker and self._mtr._worker.isRunning():
+            self._mtr._worker.stop()
+            self._mtr._worker.wait(500)

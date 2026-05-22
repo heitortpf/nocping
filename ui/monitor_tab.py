@@ -20,7 +20,8 @@ from .widgets._utils import field_label as _lbl, PRIMARY_BTN_STYLE
 
 
 class MonitorTab(QWidget):
-    status_changed = pyqtSignal()
+    status_changed      = pyqtSignal()
+    host_status_changed = pyqtSignal(str, object, object)  # host, old, new
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -186,6 +187,7 @@ class MonitorTab(QWidget):
     def _add_card_from_config(self, cfg: ProbeConfig):
         card = HostCard(cfg)
         card.removed.connect(self._remove_card)
+        card.status_changed.connect(self.host_status_changed)
         self._cards.append(card)
         self._flow.addWidget(card)
         self._placeholder.setVisible(False)

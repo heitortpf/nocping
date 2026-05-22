@@ -232,6 +232,118 @@ class TracerouteWorker(QThread):
         self.finished.emit()
 
 
+class MTRWorker(QThread):
+    """Worker de MTR contínuo (My TraceRoute — requer admin)."""
+
+    hop_discovered = pyqtSignal(int, str, str)   # ttl, ip, hostname
+    hop_update     = pyqtSignal(int, dict)        # ttl, stats
+    status         = pyqtSignal(str)
+    finished       = pyqtSignal()
+    error          = pyqtSignal(str)
+
+    def __init__(self, host: str, ip_version: IPVersion,
+                 max_hops: int = 30, timeout_ms: int = 1000,
+                 interval_ms: int = 200, parent=None):
+        super().__init__(parent)
+        self.host = host
+        self.ip_version = ip_version
+        self.max_hops = max_hops
+        self.timeout_ms = timeout_ms
+        self.interval_ms = interval_ms
+        self._stop = threading.Event()
+
+    def stop(self):
+        self._stop.set()
+
+    def run(self):
+        import statistics as _stats
+        if not is_admin():
+            self.error.emit("MTR requer privilégios de Administrador (raw socket ICMP).")
+            return
+        try:
+            family, ip = resolve_host(self.host, 0, self.ip_version)
+        except OSError as e:
+            self.error.emit(f"Resolve falhou: {e}")
+            return
+
+        pid = os.getpid() & 0xFFFF
+        seq = 0
+        per_hop: dict[int, dict] = {}  # ttl -> {sent, received, rtts, ip, hostname}
+        current_max = self.max_hops
+
+        while not self._stop.is_set():
+            for ttl in range(1, current_max + 1):
+                if self._stop.is_set():
+                    break
+
+                seq = (seq + 1) & 0xFFFF
+                hop = traceroute_hop(ip, family, ttl, seq, pid, self.timeout_ms)
+
+                if hop.get("error") == "permission":
+                    self.error.emit("Permissão negada. Execute como Administrador.")
+                    return
+
+                from_ip = hop["from_ip"] or ""
+
+                if ttl not in per_hop:
+                    hostname = from_ip
+                    if from_ip:
+                        holder = [from_ip]
+                        def _dns(a=from_ip):
+                            try:
+                                holder[0] = _socket.gethostbyaddr(a)[0]
+                            except Exception:
+                                pass
+                        t = threading.Thread(target=_dns, daemon=True)
+                        t.start()
+                        t.join(timeout=2.0)
+                        hostname = holder[0]
+                    per_hop[ttl] = {"sent": 0, "received": 0, "rtts": [],
+                                    "ip": from_ip, "hostname": hostname}
+                    self.hop_discovered.emit(ttl, from_ip, hostname)
+                elif from_ip and not per_hop[ttl]["ip"]:
+                    holder = [from_ip]
+                    def _dns2(a=from_ip):
+                        try:
+                            holder[0] = _socket.gethostbyaddr(a)[0]
+                        except Exception:
+                            pass
+                    t = threading.Thread(target=_dns2, daemon=True)
+                    t.start()
+                    t.join(timeout=2.0)
+                    per_hop[ttl]["ip"] = from_ip
+                    per_hop[ttl]["hostname"] = holder[0]
+                    self.hop_discovered.emit(ttl, from_ip, holder[0])
+
+                s = per_hop[ttl]
+                s["sent"] += 1
+                if not hop["timeout"] and from_ip:
+                    s["received"] += 1
+                    s["rtts"].append(hop["elapsed_ms"])
+
+                sent = s["sent"]
+                received = s["received"]
+                rtts = s["rtts"]
+                loss_pct = (sent - received) / sent * 100 if sent else 0.0
+                self.hop_update.emit(ttl, {
+                    "loss_pct":  loss_pct,
+                    "sent":      sent,
+                    "last_ms":   rtts[-1] if rtts else 0.0,
+                    "avg_ms":    _stats.mean(rtts) if rtts else 0.0,
+                    "best_ms":   min(rtts) if rtts else 0.0,
+                    "worst_ms":  max(rtts) if rtts else 0.0,
+                    "stdev_ms":  _stats.stdev(rtts) if len(rtts) > 1 else 0.0,
+                })
+
+                if hop["destination_reached"]:
+                    current_max = ttl
+                    break
+
+                self._stop.wait(self.interval_ms / 1000.0)
+
+        self.finished.emit()
+
+
 class BannerWorker(QThread):
     """Worker de banner grab + TLS."""
 
