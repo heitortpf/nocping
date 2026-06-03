@@ -39,11 +39,11 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 
 | Aba | Recursos |
 |-----|----------|
-| **Monitor** | Multi-host TCP/ICMP/UDP, gráfico RTT, stats, exportar CSV/JSON, histórico SQLite por host, salva sessão |
+| **Monitor** | Multi-host TCP/ICMP/UDP, modo padrão ICMP, gráfico RTT, stats, exportar CSV/JSON, histórico SQLite por host, salva sessão |
 | **Port Scan** | TCP+UDP, Top 20/100/All, progress bar, UDP open\|filtered, exportar CSV |
 | **Banner/TLS** | Banner HTTP, versão TLS, cipher suite, CN e validade do certificado |
-| **Traceroute** | ICMP TTL, DNS reverso com timeout 2s por hop, tabela Hop/IP/RTT |
-| **MTR** | Traceroute contínuo, estatísticas acumuladas por hop (loss%, avg, jitter), requer admin |
+| **Traceroute** | ICMP TTL, DNS reverso com timeout 2s por hop, tabela Hop/IP/RTT, limpar e exportar CSV |
+| **MTR** | Traceroute contínuo, estatísticas acumuladas por hop (loss%, avg, jitter), limpar e exportar CSV, requer admin |
 
 ### Outras funcionalidades
 
@@ -52,6 +52,28 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 - **Screenshot integrado** — `Arquivo → Salvar Screenshot...` (`Ctrl+P`); funciona mesmo rodando como Administrador
 - **Multi-janela** — `Ctrl+N` abre janelas adicionais com tema sincronizado
 - **Tema claro / escuro** — detectado automaticamente via `darkdetect`; alternar em tempo real
+
+---
+
+## Changelog
+
+### v1.2.0
+- **Startup mais rápido** — abas Scan/Banner/Traceroute/MTR inicializadas de forma lazy (só ao primeiro clique); janela abre antes dos hosts serem restaurados; `pyqtgraph` importado sob demanda; ícones do QSpinBox gerados em memória sem escrita em disco
+- **Monitor** — modo ICMP definido como padrão ao adicionar hosts
+- **Traceroute / MTR** — botões **Limpar** e **Exportar CSV** adicionados; correção de bug que misturava resultados de execuções consecutivas (worker anterior não era encerrado antes de iniciar novo)
+
+### v1.1.0
+- Aba MTR (My TraceRoute) com estatísticas contínuas por hop
+- Histórico de RTT persistido em SQLite com gráfico e exportação CSV
+- Notificações de bandeja quando host vai OFFLINE ou volta ONLINE
+- Probes UDP específicos por porta (DNS, NTP, DHCP, NetBIOS, SNMP, mDNS)
+- Screenshot integrado (`Ctrl+P`) — contorna restrição UIPI do Windows ao rodar como Admin
+
+### v1.0.0
+- Monitor multi-host TCP/ICMP/UDP com gráfico RTT em tempo real
+- Port Scan TCP+UDP com asyncio (timeout confiável no Windows)
+- Banner Grab + inspeção TLS/SSL
+- Traceroute ICMP com DNS reverso por hop
 
 ---
 
