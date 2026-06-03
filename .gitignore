@@ -32,9 +32,6 @@ desktop.ini
 nocping_hosts.json
 nocping_history.db
 
-# Docs de desenvolvimento (não distribuir)
-CLAUDE.md
-
 # IDE
 .vscode/
 .idea/
