@@ -20,15 +20,20 @@ from .models import PingResult, IPVersion
 # Privilégios
 # ---------------------------------------------------------------------------
 
+_admin_cache: bool | None = None
+
 def is_admin() -> bool:
-    if os.name == "nt":
-        try:
-            import ctypes
-            return bool(ctypes.windll.shell32.IsUserAnAdmin())
-        except Exception:
-            return False
-    else:
-        return os.getuid() == 0
+    global _admin_cache
+    if _admin_cache is None:
+        if os.name == "nt":
+            try:
+                import ctypes
+                _admin_cache = bool(ctypes.windll.shell32.IsUserAnAdmin())
+            except Exception:
+                _admin_cache = False
+        else:
+            _admin_cache = (os.getuid() == 0)
+    return _admin_cache
 
 
 # ---------------------------------------------------------------------------

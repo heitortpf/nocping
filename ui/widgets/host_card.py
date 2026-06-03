@@ -14,7 +14,6 @@ from PyQt6.QtGui import QFont
 from core.models import ProbeConfig, ProbeMode, IPVersion, HostStatus, PingResult
 from core.workers import PingWorker
 from core.history_store import HistoryStore
-from .rtt_graph import RttGraph
 from ._utils import rtt_color as _rtt_color
 
 
@@ -217,6 +216,7 @@ class HostCard(QFrame):
         body_layout.addWidget(_hline())
 
         # Gráfico RTT
+        from .rtt_graph import RttGraph
         self._graph = RttGraph()
         self._graph.setFixedHeight(80)
         body_layout.addWidget(self._graph)

@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QSpinBox, QComboBox, QPushButton, QScrollArea,
     QLabel, QFrame, QLayout, QLayoutItem, QSizePolicy, QFileDialog,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QRect, QSize, QPoint
+from PyQt6.QtCore import Qt, pyqtSignal, QRect, QSize, QPoint, QTimer
 from PyQt6.QtGui import QFont
 
 from core.models import ProbeConfig, ProbeMode, IPVersion, HostStatus
@@ -77,6 +77,7 @@ class MonitorTab(QWidget):
         self._cmb_mode.setFixedHeight(34)
         self._cmb_mode.setFixedWidth(90)
         self._cmb_mode.currentIndexChanged.connect(self._on_mode_changed)
+        self._cmb_mode.setCurrentIndex(self._cmb_mode.findData(ProbeMode.ICMP))
 
         self._cmb_ip = QComboBox()
         for v in IPVersion:
@@ -176,7 +177,7 @@ class MonitorTab(QWidget):
         )
         root.addWidget(self._placeholder)
 
-        self._restore_hosts()
+        QTimer.singleShot(0, self._restore_hosts)
 
     # ------------------------------------------------------------------
 

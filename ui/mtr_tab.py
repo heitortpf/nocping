@@ -2,10 +2,12 @@
 NOCPing — ui/mtr_tab.py
 Aba MTR (My TraceRoute): traceroute contínuo com estatísticas por hop.
 """
+import csv
+
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QGridLayout, QLineEdit, QSpinBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLineEdit, QSpinBox,
     QComboBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QLabel, QHeaderView, QFrame,
+    QLabel, QHeaderView, QFrame, QFileDialog,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
@@ -133,10 +135,31 @@ class MTRTab(QWidget):
         root.addWidget(panel)
         root.addSpacing(8)
 
-        # ── Status ──────────────────────────────────────────────────────
+        # ── Status + ações ──────────────────────────────────────────────
         self._lbl_status = QLabel("Digite um host e clique em Iniciar MTR.")
         self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; padding:2px 0;")
-        root.addWidget(self._lbl_status)
+
+        _sec = (
+            "QPushButton{background:palette(button);color:palette(button-text);"
+            "border-radius:5px;font-size:12px;border:none;padding:0 10px;}"
+            "QPushButton:hover{background:palette(mid);}"
+            "QPushButton:disabled{color:palette(placeholder-text);}"
+        )
+        self._btn_clear = QPushButton("🗑  Limpar")
+        self._btn_clear.setFixedHeight(26)
+        self._btn_clear.setStyleSheet(_sec)
+        self._btn_clear.clicked.connect(self._clear)
+
+        self._btn_export = QPushButton("💾  Exportar CSV")
+        self._btn_export.setFixedHeight(26)
+        self._btn_export.setStyleSheet(_sec)
+        self._btn_export.clicked.connect(self._export_csv)
+
+        status_row = QHBoxLayout()
+        status_row.addWidget(self._lbl_status, 1)
+        status_row.addWidget(self._btn_clear)
+        status_row.addWidget(self._btn_export)
+        root.addLayout(status_row)
         root.addSpacing(4)
 
         # ── Tabela ──────────────────────────────────────────────────────
@@ -180,18 +203,36 @@ class MTRTab(QWidget):
 
     # ------------------------------------------------------------------
 
+    def _cleanup_worker(self):
+        if self._worker is None:
+            return
+        try:
+            self._worker.hop_discovered.disconnect(self._on_hop_discovered)
+            self._worker.hop_update.disconnect(self._on_hop_update)
+            self._worker.error.disconnect(self._on_error)
+            self._worker.finished.disconnect(self._on_finished)
+        except RuntimeError:
+            pass
+        self._worker.stop()
+        self._worker.wait(2000)
+        self._worker.deleteLater()
+        self._worker = None
+
     def _start(self):
         host = self._inp_host.text().strip()
         if not host:
             self._inp_host.setFocus()
             return
 
+        self._cleanup_worker()
         self._table.setRowCount(0)
         self._row_map.clear()
         self._lbl_status.setText(f"Rastreando MTR para  {host}…")
         self._lbl_status.setStyleSheet("color:#a78bfa; font-size:12px; padding:2px 0;")
         self._btn_start.setEnabled(False)
         self._btn_stop.setEnabled(True)
+        self._btn_clear.setEnabled(False)
+        self._btn_export.setEnabled(False)
 
         self._worker = MTRWorker(
             host=host,
@@ -211,6 +252,8 @@ class MTRTab(QWidget):
             self._worker.stop()
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
+        self._btn_clear.setEnabled(True)
+        self._btn_export.setEnabled(self._table.rowCount() > 0)
         self._lbl_status.setText("MTR interrompido.")
         self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; padding:2px 0;")
 
@@ -254,12 +297,41 @@ class MTRTab(QWidget):
         self._lbl_status.setStyleSheet("color:#f87171; font-size:12px; padding:2px 0;")
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
+        self._btn_clear.setEnabled(True)
+        self._btn_export.setEnabled(self._table.rowCount() > 0)
 
     def _on_finished(self):
         self._lbl_status.setText("MTR concluído.")
         self._lbl_status.setStyleSheet("color:#4ade80; font-size:12px; padding:2px 0;")
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
+        self._btn_clear.setEnabled(True)
+        self._btn_export.setEnabled(self._table.rowCount() > 0)
+
+    def _clear(self):
+        self._table.setRowCount(0)
+        self._row_map.clear()
+        self._btn_export.setEnabled(False)
+        self._lbl_status.setText("Digite um host e clique em Iniciar MTR.")
+        self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; padding:2px 0;")
+
+    def _export_csv(self):
+        if self._table.rowCount() == 0:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar MTR CSV", "nocping_mtr.csv", "CSV (*.csv)"
+        )
+        if not path:
+            return
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Hop", "IP", "Hostname", "Loss%", "Sent",
+                             "Last", "Avg", "Best", "Worst", "StDev"])
+            for row in range(self._table.rowCount()):
+                writer.writerow([
+                    self._table.item(row, col).text() if self._table.item(row, col) else ""
+                    for col in range(self._table.columnCount())
+                ])
 
     # ------------------------------------------------------------------
 

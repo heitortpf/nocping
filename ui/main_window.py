@@ -2,23 +2,18 @@
 NOCPing — ui/main_window.py
 Janela principal com abas, menu e barra de status.
 """
-import os
-import tempfile
+import base64
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QTabWidget,
+    QMainWindow, QTabWidget, QWidget,
     QLabel, QMessageBox, QPushButton, QApplication, QFileDialog,
     QSystemTrayIcon, QMenu,
 )
-from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import QSettings, QByteArray, QBuffer, QIODevice
 from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QAction, QPalette, QColor, QPainter, QPixmap, QPolygonF
 
 from .monitor_tab import MonitorTab
-from .scan_tab import ScanTab
-from .banner_tab import BannerTab
-from .traceroute_tab import TracerouteTab
-from .mtr_tab import MTRTab
 from core.network import is_admin
 
 
@@ -78,9 +73,12 @@ def _arrow_url(direction: str, dark: bool) -> str:
     p.drawPolygon(QPolygonF(pts))
     p.end()
 
-    path = os.path.join(tempfile.gettempdir(), f"nocping_arrow_{key}.png")
-    px.save(path)
-    url = path.replace("\\", "/")
+    ba = QByteArray()
+    buf = QBuffer(ba)
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
+    px.save(buf, "PNG")
+    b64 = base64.b64encode(ba.data()).decode()
+    url = f"data:image/png;base64,{b64}"
     _arrow_cache[key] = url
     return url
 
@@ -268,17 +266,49 @@ class MainWindow(QMainWindow):
         self._monitor = MonitorTab()
         self._monitor.status_changed.connect(self._update_status_bar)
         self._monitor.host_status_changed.connect(self._on_host_status_changed)
-        self._scan = ScanTab()
-        self._banner = BannerTab()
-        self._traceroute = TracerouteTab()
-        self._mtr = MTRTab()
+        self._scan:       "ScanTab | None"       = None
+        self._banner:     "BannerTab | None"     = None
+        self._traceroute: "TracerouteTab | None" = None
+        self._mtr:        "MTRTab | None"        = None
+        self._initialized_tabs: set[int] = {0}
 
-        self._tabs.addTab(self._monitor,    "⬤  Monitor")
-        self._tabs.addTab(self._scan,       "🔍  Port Scan")
-        self._tabs.addTab(self._banner,     "🔒  Banner / TLS")
-        self._tabs.addTab(self._traceroute, "📡  Traceroute")
-        self._tabs.addTab(self._mtr,        "📊  MTR")
+        self._tabs.addTab(self._monitor, "⬤  Monitor")
+        self._tabs.addTab(QWidget(),     "🔍  Port Scan")
+        self._tabs.addTab(QWidget(),     "🔒  Banner / TLS")
+        self._tabs.addTab(QWidget(),     "📡  Traceroute")
+        self._tabs.addTab(QWidget(),     "📊  MTR")
         self.setCentralWidget(self._tabs)
+        self._tabs.currentChanged.connect(self._on_tab_activated)
+
+    def _on_tab_activated(self, index: int):
+        if index in self._initialized_tabs:
+            return
+        self._initialized_tabs.add(index)
+
+        if index == 1:
+            from .scan_tab import ScanTab
+            self._scan = ScanTab()
+            widget, label = self._scan, "🔍  Port Scan"
+        elif index == 2:
+            from .banner_tab import BannerTab
+            self._banner = BannerTab()
+            widget, label = self._banner, "🔒  Banner / TLS"
+        elif index == 3:
+            from .traceroute_tab import TracerouteTab
+            self._traceroute = TracerouteTab()
+            widget, label = self._traceroute, "📡  Traceroute"
+        elif index == 4:
+            from .mtr_tab import MTRTab
+            self._mtr = MTRTab()
+            widget, label = self._mtr, "📊  MTR"
+        else:
+            return
+
+        self._tabs.currentChanged.disconnect(self._on_tab_activated)
+        self._tabs.removeTab(index)
+        self._tabs.insertTab(index, widget, label)
+        self._tabs.setCurrentIndex(index)
+        self._tabs.currentChanged.connect(self._on_tab_activated)
 
     def _build_status_bar(self):
         self._status_bar = self.statusBar()
@@ -291,8 +321,9 @@ class MainWindow(QMainWindow):
         self._lbl_up.setStyleSheet("color:#4ade80;")
         self._lbl_down.setStyleSheet("color:#f87171;")
 
-        admin_txt   = "🔐 Admin" if is_admin() else "⚠ Sem Admin (ICMP/UDP indisponível)"
-        admin_color = "#4ade80"  if is_admin() else "#facc15"
+        _admin = is_admin()
+        admin_txt   = "🔐 Admin" if _admin else "⚠ Sem Admin (ICMP/UDP indisponível)"
+        admin_color = "#4ade80"  if _admin else "#facc15"
         self._lbl_admin.setText(admin_txt)
         self._lbl_admin.setStyleSheet(f"color:{admin_color};")
 
@@ -407,11 +438,13 @@ class MainWindow(QMainWindow):
             pass
         for card in self._monitor._cards:
             card.stop()
-        self._scan._cleanup_worker()
-        self._banner._cleanup_worker()
-        if self._traceroute._worker and self._traceroute._worker.isRunning():
+        if self._scan:
+            self._scan._cleanup_worker()
+        if self._banner:
+            self._banner._cleanup_worker()
+        if self._traceroute and self._traceroute._worker and self._traceroute._worker.isRunning():
             self._traceroute._worker.stop()
             self._traceroute._worker.wait(500)
-        if self._mtr._worker and self._mtr._worker.isRunning():
+        if self._mtr and self._mtr._worker and self._mtr._worker.isRunning():
             self._mtr._worker.stop()
             self._mtr._worker.wait(500)
