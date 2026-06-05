@@ -11,7 +11,6 @@ from PyQt6.QtWidgets import (
     QLabel, QFrame, QLayout, QLayoutItem, QSizePolicy, QFileDialog,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QRect, QSize, QPoint, QTimer
-from PyQt6.QtGui import QFont
 
 from core.models import ProbeConfig, ProbeMode, IPVersion, HostStatus
 from core.config_store import save_hosts, load_hosts
@@ -228,9 +227,19 @@ class MonitorTab(QWidget):
             c.stop()
 
     def _clear_all(self):
-        for c in list(self._cards):
-            self._remove_card(c)
-        save_hosts([])
+        from PyQt6.QtWidgets import QMessageBox
+        if not self._cards:
+            return
+        reply = QMessageBox.question(
+            self, "Limpar Todos",
+            "Tem certeza que deseja remover todos os hosts monitorados?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            for c in list(self._cards):
+                self._remove_card(c)
+            save_hosts([])
 
     def _on_mode_changed(self):
         is_icmp = self._cmb_mode.currentData() == ProbeMode.ICMP
@@ -238,6 +247,7 @@ class MonitorTab(QWidget):
         self._inp_port.setToolTip("ICMP não usa porta" if is_icmp else "")
 
     def _export_csv(self):
+        from core.network import calc_stats
         if not self._cards:
             return
         path, _ = QFileDialog.getSaveFileName(
@@ -250,20 +260,15 @@ class MonitorTab(QWidget):
             writer.writerow(["Host", "Modo", "Status", "RTT (ms)", "Média (ms)",
                              "Mín (ms)", "Máx (ms)", "Perda %", "Seq"])
             for card in self._cards:
-                ok = [r for r in card._results if r.success and r.elapsed_ms > 0]
-                lost = len(card._results) - len(ok)
-                loss_pct = (lost / len(card._results) * 100) if card._results else 0.0
-                avg = sum(r.elapsed_ms for r in ok) / len(ok) if ok else 0.0
-                mn  = min(r.elapsed_ms for r in ok) if ok else 0.0
-                mx  = max(r.elapsed_ms for r in ok) if ok else 0.0
-                last_rtt = ok[-1].elapsed_ms if ok else 0.0
+                stats = calc_stats(list(card._results))
+                last_rtt = card._results[-1].elapsed_ms if card._results and card._results[-1].success else 0.0
                 writer.writerow([
                     card.config.host,
                     card.config.mode.value,
                     card.status.name,
-                    f"{last_rtt:.1f}", f"{avg:.1f}",
-                    f"{mn:.1f}", f"{mx:.1f}",
-                    f"{loss_pct:.1f}", len(card._results),
+                    f"{last_rtt:.1f}", f"{stats['avg_ms']:.1f}",
+                    f"{stats['min_ms']:.1f}", f"{stats['max_ms']:.1f}",
+                    f"{stats['loss_pct']:.1f}", len(card._results),
                 ])
 
     def _export_json(self):

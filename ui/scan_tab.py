@@ -3,14 +3,12 @@ NOCPing — ui/scan_tab.py
 Aba de port scan multithread.
 """
 import csv
-import os
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QSpinBox,
     QComboBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QProgressBar, QLabel, QHeaderView, QFileDialog, QFrame, QCheckBox,
+    QProgressBar, QLabel, QHeaderView, QFileDialog, QCheckBox,
 )
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
 from core.models import IPVersion

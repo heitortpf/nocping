@@ -9,7 +9,6 @@ from PyQt6.QtWidgets import (
     QComboBox, QPushButton, QTableWidget, QTableWidgetItem,
     QLabel, QHeaderView, QFrame, QFileDialog,
 )
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
 from core.models import IPVersion

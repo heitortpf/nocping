@@ -72,12 +72,13 @@ class HistoryDialog(QDialog):
         root.addLayout(toolbar)
 
         # ── Gráfico ──────────────────────────────────────────────────────
-        self._plot = pg.PlotWidget()
+        date_axis = pg.DateAxisItem(orientation='bottom')
+        self._plot = pg.PlotWidget(axisItems={'bottom': date_axis})
         self._plot.setFixedHeight(160)
         self._plot.setBackground("#1e1e2e")
-        self._plot.hideAxis("bottom")
         self._plot.showAxis("left")
         self._plot.getAxis("left").setTextPen(pg.mkPen("#888"))
+        self._plot.getAxis("bottom").setTextPen(pg.mkPen("#888"))
         self._plot.setMouseEnabled(x=False, y=False)
         self._plot.setMenuEnabled(False)
         self._plot.showGrid(y=True, alpha=0.15)
@@ -120,6 +121,7 @@ class HistoryDialog(QDialog):
 
         self._table.setRowCount(0)
         elapsed_vals = []
+        timestamps = []
 
         for row_data in rows:
             ts_str = datetime.datetime.fromtimestamp(row_data["ts"]).strftime(
@@ -141,13 +143,18 @@ class HistoryDialog(QDialog):
 
             if ok and ms > 0:
                 elapsed_vals.append(ms)
+                timestamps.append(row_data["ts"])
 
         # Gráfico
         if elapsed_vals:
+            # We must reverse because rows are ordered DESC, but graph needs ascending X
+            timestamps.reverse()
+            elapsed_vals.reverse()
+            
             color = _rtt_color(sum(elapsed_vals) / len(elapsed_vals))
             self._curve.setPen(pg.mkPen(color, width=1.5))
             self._curve.setBrush(pg.mkBrush(color + "18"))
-            self._curve.setData(list(range(len(elapsed_vals))), elapsed_vals)
+            self._curve.setData(timestamps, elapsed_vals)
             mx = max(elapsed_vals)
             self._plot.setYRange(0, mx * 1.2, padding=0)
         else:

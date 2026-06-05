@@ -5,7 +5,6 @@ Gráfico de RTT em tempo real usando pyqtgraph.
 from collections import deque
 
 import pyqtgraph as pg
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
 from ._utils import rtt_color
 

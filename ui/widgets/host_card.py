@@ -3,6 +3,7 @@ NOCPing — ui/widgets/host_card.py
 Card individual por host — layout com seções separadas e hierarquia visual clara.
 """
 import csv
+from collections import deque
 
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel,
@@ -56,7 +57,14 @@ class HostCard(QFrame):
         self.config = config
         self._worker: PingWorker | None = None
         self._status = HostStatus.IDLE
-        self._results = []
+        self._results: deque[PingResult] = deque(maxlen=5000)
+
+        # Contadores incrementais O(1) para estatísticas
+        self._ok_count = 0
+        self._total_count = 0
+        self._sum_ms = 0.0
+        self._min_ms = float("inf")
+        self._max_ms = 0.0
 
         self.setFixedWidth(320)
         self.setObjectName("HostCard")
@@ -102,11 +110,12 @@ class HostCard(QFrame):
         self._indicator.setFixedWidth(20)
 
         self._lbl_host = QLabel(self.config.host)
+        self._lbl_host.setToolTip(self.config.host)
         font_host = QFont()
         font_host.setPointSize(13)
         font_host.setBold(True)
         self._lbl_host.setFont(font_host)
-        self._lbl_host.setStyleSheet("color:#cdd6f4;")
+        self._lbl_host.setStyleSheet("color:palette(text);")
 
         self._lbl_status_text = QLabel(STATUS_LABEL[HostStatus.IDLE])
         self._lbl_status_text.setStyleSheet(
@@ -278,6 +287,11 @@ class HostCard(QFrame):
         if self._worker and self._worker.isRunning():
             return
         self._results.clear()
+        self._ok_count = 0
+        self._total_count = 0
+        self._sum_ms = 0.0
+        self._min_ms = float("inf")
+        self._max_ms = 0.0
         self._graph.reset()
         self._reset_stats()
         self._set_status(HostStatus.RUNNING)
@@ -289,14 +303,13 @@ class HostCard(QFrame):
         self._worker.result.connect(self._on_result)
         self._worker.resolved.connect(self._on_resolved)
         self._worker.error.connect(self._on_error)
-        self._worker.finished.connect(self._on_finished)
+        self._worker.stats.connect(self._on_finished)
         self._worker.start()
 
     def stop(self):
         if self._worker:
             self._worker.stop()
-        self._btn_start.setEnabled(True)
-        self._btn_stop.setEnabled(False)
+        self._reset_buttons_idle()
         if self._status == HostStatus.RUNNING:
             self._set_status(HostStatus.IDLE)
 
@@ -317,6 +330,16 @@ class HostCard(QFrame):
         timeout = not r.success or r.elapsed_ms <= 0
         self._graph.add_point(r.elapsed_ms if not timeout else 0.0, timeout)
 
+        # Contadores incrementais O(1)
+        self._total_count += 1
+        if r.success and r.elapsed_ms > 0:
+            self._ok_count += 1
+            self._sum_ms += r.elapsed_ms
+            if r.elapsed_ms < self._min_ms:
+                self._min_ms = r.elapsed_ms
+            if r.elapsed_ms > self._max_ms:
+                self._max_ms = r.elapsed_ms
+
         if r.success:
             self._set_status(HostStatus.UP)
             c = _rtt_color(r.elapsed_ms)
@@ -327,34 +350,35 @@ class HostCard(QFrame):
             self._val_rtt.setText("timeout")
             self._val_rtt.setStyleSheet("color:#f87171; font-size:16px; font-weight:bold;")
 
-        # Estatísticas acumuladas
-        ok = [x for x in self._results if x.success and x.elapsed_ms > 0]
-        lost = len(self._results) - len(ok)
-        loss_pct = lost / len(self._results) * 100
-        avg = sum(x.elapsed_ms for x in ok) / len(ok) if ok else 0.0
-        mn  = min(x.elapsed_ms for x in ok) if ok else 0.0
-        mx  = max(x.elapsed_ms for x in ok) if ok else 0.0
+        # Estatísticas a partir dos contadores O(1)
+        lost = self._total_count - self._ok_count
+        loss_pct = lost / self._total_count * 100
+        avg = self._sum_ms / self._ok_count if self._ok_count else 0.0
+        mn = self._min_ms if self._ok_count else 0.0
+        mx = self._max_ms if self._ok_count else 0.0
 
-        avg_c = _rtt_color(avg) if ok else "#6b7280"
-        self._val_avg.setText(f"{avg:.1f} ms" if ok else "—")
+        avg_c = _rtt_color(avg) if self._ok_count else "#6b7280"
+        self._val_avg.setText(f"{avg:.1f} ms" if self._ok_count else "—")
         self._val_avg.setStyleSheet(f"color:{avg_c}; font-size:20px; font-weight:bold;")
 
         loss_c = "#f87171" if loss_pct > 5 else ("#facc15" if loss_pct > 0 else "#4ade80")
         self._val_loss.setText(f"{loss_pct:.0f}%")
         self._val_loss.setStyleSheet(f"color:{loss_c}; font-size:20px; font-weight:bold;")
 
-        self._lbl_min.setText(f"Mín: {mn:.1f}ms" if ok else "Mín: —")
-        self._lbl_max.setText(f"Máx: {mx:.1f}ms" if ok else "Máx: —")
+        self._lbl_min.setText(f"Mín: {mn:.1f}ms" if self._ok_count else "Mín: —")
+        self._lbl_max.setText(f"Máx: {mx:.1f}ms" if self._ok_count else "Máx: —")
         self._lbl_seq.setText(f"Seq: {r.seq}")
 
     def _on_error(self, msg: str):
         self._set_status(HostStatus.ERROR)
         self._lbl_ip.setText(f"⚠  {msg[:36]}")
         self._val_rtt.setText("—")
-        self._btn_start.setEnabled(True)
-        self._btn_stop.setEnabled(False)
+        self._reset_buttons_idle()
 
     def _on_finished(self, _stats: dict):
+        self._reset_buttons_idle()
+
+    def _reset_buttons_idle(self):
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
 

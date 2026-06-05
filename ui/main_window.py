@@ -385,6 +385,11 @@ class MainWindow(QMainWindow):
                 "Host online", f"{host} voltou ONLINE",
                 QSystemTrayIcon.MessageIcon.Information, 3000,
             )
+        elif new == HostStatus.ERROR:
+            self._tray.showMessage(
+                "Erro no Host", f"Erro monitorando {host}",
+                QSystemTrayIcon.MessageIcon.Warning, 4000,
+            )
 
     def _open_new_window(self):
         win = MainWindow()
@@ -428,7 +433,10 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event):
-        self._shutdown()
+        if QSystemTrayIcon.isSystemTrayAvailable() and self._tray.isVisible():
+            self.hide()
+            event.ignore()
+            return
         QApplication.quit()
 
     def _shutdown(self):
@@ -448,3 +456,7 @@ class MainWindow(QMainWindow):
         if self._mtr and self._mtr._worker and self._mtr._worker.isRunning():
             self._mtr._worker.stop()
             self._mtr._worker.wait(500)
+        # Fechar conexão SQLite do HistoryStore
+        from core.history_store import HistoryStore
+        HistoryStore.instance().close()
+

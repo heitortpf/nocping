@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS rtt_history (
 CREATE INDEX IF NOT EXISTS idx_host_ts ON rtt_history(host, ts);
 """
 
+_BATCH_SIZE = 50  # flush automático a cada N registros
+
 
 class HistoryStore:
     _instance: "HistoryStore | None" = None
@@ -38,22 +40,41 @@ class HistoryStore:
         self._conn = sqlite3.connect(
             str(_DB_PATH), check_same_thread=False
         )
+        self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_DDL)
         self._conn.commit()
         self._rw_lock = threading.Lock()
+        self._pending: list[tuple] = []
 
     def record(self, host: str, result: PingResult) -> None:
         with self._rw_lock:
-            self._conn.execute(
-                "INSERT INTO rtt_history(host, ts, success, elapsed, note) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (host, time.time(), int(result.success),
-                 result.elapsed_ms, result.note),
-            )
-            self._conn.commit()
+            self._pending.append((
+                host, time.time(), int(result.success),
+                result.elapsed_ms, result.note,
+            ))
+            if len(self._pending) >= _BATCH_SIZE:
+                self._flush_locked()
+
+    def flush(self) -> None:
+        """Força commit dos registros pendentes."""
+        with self._rw_lock:
+            self._flush_locked()
+
+    def _flush_locked(self) -> None:
+        """Commit interno — deve ser chamado com _rw_lock adquirido."""
+        if not self._pending:
+            return
+        self._conn.executemany(
+            "INSERT INTO rtt_history(host, ts, success, elapsed, note) "
+            "VALUES (?, ?, ?, ?, ?)",
+            self._pending,
+        )
+        self._conn.commit()
+        self._pending.clear()
 
     def query(self, host: str, last_n: int = 500) -> list[dict]:
         with self._rw_lock:
+            self._flush_locked()
             cur = self._conn.execute(
                 "SELECT ts, success, elapsed, note FROM rtt_history "
                 "WHERE host = ? ORDER BY ts DESC LIMIT ?",
@@ -67,6 +88,7 @@ class HistoryStore:
 
     def clear(self, host: str) -> None:
         with self._rw_lock:
+            self._pending = [p for p in self._pending if p[0] != host]
             self._conn.execute(
                 "DELETE FROM rtt_history WHERE host = ?", (host,)
             )
@@ -74,7 +96,15 @@ class HistoryStore:
 
     def hosts(self) -> list[str]:
         with self._rw_lock:
+            self._flush_locked()
             cur = self._conn.execute(
                 "SELECT DISTINCT host FROM rtt_history ORDER BY host"
             )
             return [r[0] for r in cur.fetchall()]
+
+    def close(self) -> None:
+        """Flush pendentes e fecha conexão SQLite."""
+        with self._rw_lock:
+            self._flush_locked()
+            self._conn.close()
+

@@ -58,9 +58,12 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 ## Changelog
 
 ### v1.2.0
-- **Startup mais rápido** — abas Scan/Banner/Traceroute/MTR inicializadas de forma lazy (só ao primeiro clique); janela abre antes dos hosts serem restaurados; `pyqtgraph` importado sob demanda; ícones do QSpinBox gerados em memória sem escrita em disco
-- **Monitor** — modo ICMP definido como padrão ao adicionar hosts
-- **Traceroute / MTR** — botões **Limpar** e **Exportar CSV** adicionados; correção de bug que misturava resultados de execuções consecutivas (worker anterior não era encerrado antes de iniciar novo)
+- **Refatoração de Performance (100% otimizado)** — limite de 5000 registros na UI para evitar leak de memória; cálculo O(1) imediato de RTT stats na interface; correção de delay (6x mais rápido) em ciclos do Traceroute MTR.
+- **Correções Críticas (Bugs)** — correção de `NameError` e duplo shutdown em instâncias multi-janela no macOS/Windows; SQLite ganha suporte robusto a transações em lote (batch commits) e fechamento limpo via modo WAL.
+- **Melhorias Visuais e UX** — Timeline em datas legíveis e reais (timestamp xAxis) no gráfico de Histórico; correção da cor do título dos cards baseados na paleta do tema (compatibilidade Dark/Light); alertas via bandeja do sistema para HostStatus.ERROR.
+- **Startup mais rápido** — abas Scan/Banner/Traceroute/MTR inicializadas de forma lazy (só ao primeiro clique); janela abre antes dos hosts serem restaurados; `pyqtgraph` importado sob demanda; ícones do QSpinBox gerados em memória sem escrita em disco.
+- **Monitor** — modo ICMP definido como padrão ao adicionar hosts.
+- **Traceroute / MTR** — botões **Limpar** e **Exportar CSV** adicionados; correção de bug que misturava resultados de execuções consecutivas (worker anterior não era encerrado antes de iniciar novo).
 
 ### v1.1.0
 - Aba MTR (My TraceRoute) com estatísticas contínuas por hop

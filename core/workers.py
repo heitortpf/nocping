@@ -164,6 +164,20 @@ class ScanWorker(QThread):
         self.finished_ok.emit()
 
 
+def _resolve_hostname(ip: str, timeout: float = 2.0) -> str:
+    """Resolve DNS reverso com timeout — helper compartilhado."""
+    result = [ip]
+    def _dns():
+        try:
+            result[0] = _socket.gethostbyaddr(ip)[0]
+        except Exception:
+            pass
+    t = threading.Thread(target=_dns, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    return result[0]
+
+
 class TracerouteWorker(QThread):
     """Worker de traceroute ICMP (requer admin)."""
 
@@ -205,16 +219,7 @@ class TracerouteWorker(QThread):
             hop = traceroute_hop(ip, family, ttl, ttl, pid, self.timeout_ms)
 
             if hop["from_ip"] and not hop["timeout"]:
-                result_holder = [hop["from_ip"]]
-                def _resolve(ip=hop["from_ip"]):
-                    try:
-                        result_holder[0] = _socket.gethostbyaddr(ip)[0]
-                    except Exception:
-                        pass
-                t = threading.Thread(target=_resolve, daemon=True)
-                t.start()
-                t.join(timeout=2.0)
-                hostname = result_holder[0]
+                hostname = _resolve_hostname(hop["from_ip"])
             else:
                 hostname = None
             hop["hostname"] = hostname
@@ -286,34 +291,15 @@ class MTRWorker(QThread):
                 from_ip = hop["from_ip"] or ""
 
                 if ttl not in per_hop:
-                    hostname = from_ip
-                    if from_ip:
-                        holder = [from_ip]
-                        def _dns(a=from_ip):
-                            try:
-                                holder[0] = _socket.gethostbyaddr(a)[0]
-                            except Exception:
-                                pass
-                        t = threading.Thread(target=_dns, daemon=True)
-                        t.start()
-                        t.join(timeout=2.0)
-                        hostname = holder[0]
+                    hostname = _resolve_hostname(from_ip) if from_ip else from_ip
                     per_hop[ttl] = {"sent": 0, "received": 0, "rtts": [],
                                     "ip": from_ip, "hostname": hostname}
                     self.hop_discovered.emit(ttl, from_ip, hostname)
                 elif from_ip and not per_hop[ttl]["ip"]:
-                    holder = [from_ip]
-                    def _dns2(a=from_ip):
-                        try:
-                            holder[0] = _socket.gethostbyaddr(a)[0]
-                        except Exception:
-                            pass
-                    t = threading.Thread(target=_dns2, daemon=True)
-                    t.start()
-                    t.join(timeout=2.0)
+                    hostname = _resolve_hostname(from_ip)
                     per_hop[ttl]["ip"] = from_ip
-                    per_hop[ttl]["hostname"] = holder[0]
-                    self.hop_discovered.emit(ttl, from_ip, holder[0])
+                    per_hop[ttl]["hostname"] = hostname
+                    self.hop_discovered.emit(ttl, from_ip, hostname)
 
                 s = per_hop[ttl]
                 s["sent"] += 1
@@ -339,7 +325,8 @@ class MTRWorker(QThread):
                     current_max = ttl
                     break
 
-                self._stop.wait(self.interval_ms / 1000.0)
+            # Wait AFTER completing full cycle, not between each hop
+            self._stop.wait(self.interval_ms / 1000.0)
 
         self.finished.emit()
 
