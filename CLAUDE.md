@@ -134,7 +134,7 @@ Necessário porque o NOCPing roda como Administrador e o UIPI do Windows impede 
 - Sinal que dispara as notificações: `MonitorTab.host_status_changed(host, old, new)` → conectado em `_build_tabs()`; originado em `HostCard.status_changed` emitido no `_set_status()` quando o status muda para UP/DOWN/ERROR
 
 ### closeEvent / _shutdown
-`closeEvent` **oculta** a janela na bandeja (em vez de fechar) quando `QSystemTrayIcon.isSystemTrayAvailable()`. Para encerrar de verdade: menu da bandeja → "Sair" ou `Ctrl+Q`, que chama `QApplication.quit()`.
+`closeEvent` fecha a aplicação completamente, encerrando o processo. O ícone da bandeja é destruído automaticamente.
 
 `QApplication.aboutToQuit` está conectado a `_shutdown()`, que encerra todos os workers:
 ```python
@@ -328,6 +328,7 @@ Compila automaticamente para Windows, Linux e macOS e publica na página de Rele
 ### Versões publicadas
 - `v1.0.0` — versão inicial (Monitor, Port Scan, Banner/TLS, Traceroute)
 - `v1.1.0` — MTR, histórico SQLite, bandeja+notificações, probes UDP extras, screenshot integrado
+- `v1.2.0` — Refatoração de performance, modo WAL no SQLite, melhorias visuais e remoção do minimizar para bandeja
 
 ### Repositório
 https://github.com/heitortpf/nocping

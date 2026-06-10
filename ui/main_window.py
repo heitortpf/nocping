@@ -433,10 +433,6 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event):
-        if QSystemTrayIcon.isSystemTrayAvailable() and self._tray.isVisible():
-            self.hide()
-            event.ignore()
-            return
         QApplication.quit()
 
     def _shutdown(self):

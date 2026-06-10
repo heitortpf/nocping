@@ -66,7 +66,6 @@ if self._mtr._worker and self._mtr._worker.isRunning():
 - Criar `QSystemTrayIcon` com `NOCPing.ico` no `__init__`
 - Menu de contexto: "Abrir", "Sair"
 - Método `notify(title, msg, icon_type)` usando `showMessage()`
-- Ao fechar a janela principal, `QSystemTrayIcon` permanece (app continua viva na bandeja)
 - Duplo-clique no ícone da bandeja restaura a janela
 
 **2. Sinal de mudança de status — `ui/widgets/host_card.py`**
@@ -87,7 +86,6 @@ if self._mtr._worker and self._mtr._worker.isRunning():
 - Ícone aparece na bandeja ao iniciar
 - Notificação disparada ao host mudar de UP→DOWN e DOWN→UP
 - Checkbox "Notificações" desativa as mensagens
-- App permanece na bandeja ao fechar a janela (X)
 - Duplo-clique na bandeja restaura a janela
 
 ---
