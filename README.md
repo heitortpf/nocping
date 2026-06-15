@@ -39,6 +39,7 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 
 | Aba | Recursos |
 |-----|----------|
+| **Quick Ping** | (NOVO) Ping rápido de host único, TCP/ICMP/UDP, gráfico RTT expandido, log estilo console, stats completas (RTT, média, jitter, perda) |
 | **Monitor** | Multi-host TCP/ICMP/UDP, modo padrão ICMP, gráfico RTT, stats, exportar CSV/JSON, histórico SQLite por host, salva sessão |
 | **Port Scan** | TCP+UDP, Top 20/100/All, progress bar, UDP open\|filtered, exportar CSV |
 | **Banner/TLS** | Banner HTTP, versão TLS, cipher suite, CN e validade do certificado |
@@ -56,6 +57,9 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 ---
 
 ## Changelog
+
+### v1.3.0
+- **Quick Ping (Nova Aba Inicial)** — Diagnóstico ágil de um único host. Conta com gráfico RTT expandido, console de log integrado com auto-scroll e cópia, suporte a TCP/ICMP/UDP, e estatísticas em tempo real (RTT, Média, Jitter, Mínimo, Máximo, Perda).
 
 ### v1.2.0
 - **Refatoração de Performance (100% otimizado)** — limite de 5000 registros na UI para evitar leak de memória; cálculo O(1) imediato de RTT stats na interface; correção de delay (6x mais rápido) em ciclos do Traceroute MTR.

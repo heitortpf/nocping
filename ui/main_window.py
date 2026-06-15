@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QAction, QPalette, QColor, QPainter, QPixmap, QPolygonF
 
 from .monitor_tab import MonitorTab
+from .quick_ping_tab import QuickPingTab
 from core.network import is_admin
 
 
@@ -263,6 +264,7 @@ class MainWindow(QMainWindow):
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
 
+        self._quick_ping = QuickPingTab()
         self._monitor = MonitorTab()
         self._monitor.status_changed.connect(self._update_status_bar)
         self._monitor.host_status_changed.connect(self._on_host_status_changed)
@@ -270,13 +272,14 @@ class MainWindow(QMainWindow):
         self._banner:     "BannerTab | None"     = None
         self._traceroute: "TracerouteTab | None" = None
         self._mtr:        "MTRTab | None"        = None
-        self._initialized_tabs: set[int] = {0}
+        self._initialized_tabs: set[int] = {0, 1}
 
-        self._tabs.addTab(self._monitor, "⬤  Monitor")
-        self._tabs.addTab(QWidget(),     "🔍  Port Scan")
-        self._tabs.addTab(QWidget(),     "🔒  Banner / TLS")
-        self._tabs.addTab(QWidget(),     "📡  Traceroute")
-        self._tabs.addTab(QWidget(),     "📊  MTR")
+        self._tabs.addTab(self._quick_ping, "⚡  Quick Ping")
+        self._tabs.addTab(self._monitor,    "⬤  Monitor")
+        self._tabs.addTab(QWidget(),        "🔍  Port Scan")
+        self._tabs.addTab(QWidget(),        "🔒  Banner / TLS")
+        self._tabs.addTab(QWidget(),        "📡  Traceroute")
+        self._tabs.addTab(QWidget(),        "📊  MTR")
         self.setCentralWidget(self._tabs)
         self._tabs.currentChanged.connect(self._on_tab_activated)
 
@@ -285,19 +288,19 @@ class MainWindow(QMainWindow):
             return
         self._initialized_tabs.add(index)
 
-        if index == 1:
+        if index == 2:
             from .scan_tab import ScanTab
             self._scan = ScanTab()
             widget, label = self._scan, "🔍  Port Scan"
-        elif index == 2:
+        elif index == 3:
             from .banner_tab import BannerTab
             self._banner = BannerTab()
             widget, label = self._banner, "🔒  Banner / TLS"
-        elif index == 3:
+        elif index == 4:
             from .traceroute_tab import TracerouteTab
             self._traceroute = TracerouteTab()
             widget, label = self._traceroute, "📡  Traceroute"
-        elif index == 4:
+        elif index == 5:
             from .mtr_tab import MTRTab
             self._mtr = MTRTab()
             widget, label = self._mtr, "📊  MTR"
@@ -401,6 +404,7 @@ class MainWindow(QMainWindow):
         for win in MainWindow._instances:
             win._is_dark = new_dark
             win._apply_window_theme()
+            win._quick_ping.apply_theme(new_dark)
             for card in win._monitor._cards:
                 card._graph.apply_theme(new_dark)
 
@@ -440,6 +444,7 @@ class MainWindow(QMainWindow):
             MainWindow._instances.remove(self)
         except ValueError:
             pass
+        self._quick_ping.cleanup()
         for card in self._monitor._cards:
             card.stop()
         if self._scan:
