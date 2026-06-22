@@ -60,6 +60,7 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 
 ### v1.3.0
 - **Quick Ping (Nova Aba Inicial)** — Diagnóstico ágil de um único host. Conta com gráfico RTT expandido, console de log integrado com auto-scroll e cópia, suporte a TCP/ICMP/UDP, e estatísticas em tempo real (RTT, Média, Jitter, Mínimo, Máximo, Perda).
+- **Fix: Botão Parar e reinício automático** — Corrigida race condition de sinais que impedia o botão Parar de funcionar; ao iniciar novo ping, o anterior é parado automaticamente, o console é limpo e o novo teste inicia (comportamento consistente com as demais abas).
 
 ### v1.2.0
 - **Refatoração de Performance (100% otimizado)** — limite de 5000 registros na UI para evitar leak de memória; cálculo O(1) imediato de RTT stats na interface; correção de delay (6x mais rápido) em ciclos do Traceroute MTR.
@@ -183,6 +184,7 @@ core/
   history_store.py       — histórico de RTT em SQLite
 ui/
   main_window.py         — janela principal, temas, multi-janela, bandeja, screenshot
+  quick_ping_tab.py      — aba de ping rápido (host único)
   monitor_tab.py         — aba de monitoramento
   scan_tab.py            — aba de port scan
   banner_tab.py          — aba de banner grab / TLS

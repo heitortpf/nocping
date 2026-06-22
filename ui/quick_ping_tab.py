@@ -440,9 +440,8 @@ class QuickPingTab(QWidget):
             self._inp_host.setFocus()
             return
         # Para teste anterior se rodando
-        if self._worker and self._worker.isRunning():
-            self._worker.stop()
-            self._worker.wait(500)
+        self._kill_worker()
+        self._clear_console()
         self._start_ping(host)
 
     def _start_ping(self, host: str):
@@ -473,9 +472,22 @@ class QuickPingTab(QWidget):
         self._worker.stats.connect(self._on_finished)
         self._worker.start()
 
+    def _kill_worker(self):
+        """Stop the running worker and disconnect its signals to prevent ghost callbacks."""
+        if self._worker is not None:
+            self._worker.result.disconnect(self._on_result)
+            self._worker.resolved.disconnect(self._on_resolved)
+            self._worker.error.disconnect(self._on_error)
+            self._worker.stats.disconnect(self._on_finished)
+            if self._worker.isRunning():
+                self._worker.stop()
+                self._worker.wait(1000)
+            self._worker = None
+
     def _stop(self):
-        if self._worker and self._worker.isRunning():
-            self._worker.stop()
+        was_running = self._worker is not None and self._worker.isRunning()
+        self._kill_worker()
+        if was_running:
             self._log_info("Ping interrompido pelo usuário.")
         self._elapsed_timer.stop()
         self._set_status("PARADO", "#6b7280")
@@ -757,6 +769,4 @@ class QuickPingTab(QWidget):
     def cleanup(self):
         """Stop worker for shutdown."""
         self._elapsed_timer.stop()
-        if self._worker and self._worker.isRunning():
-            self._worker.stop()
-            self._worker.wait(500)
+        self._kill_worker()
