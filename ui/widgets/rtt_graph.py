@@ -6,6 +6,7 @@ from collections import deque
 
 import pyqtgraph as pg
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer
 from ._utils import rtt_color
 
 
@@ -16,6 +17,12 @@ class RttGraph(pg.PlotWidget):
         super().__init__(parent)
         self._history = deque([0.0] * self.MAX_POINTS, maxlen=self.MAX_POINTS)
         self._timeout_mask = deque([False] * self.MAX_POINTS, maxlen=self.MAX_POINTS)
+        self._needs_redraw = False
+
+        self._redraw_timer = QTimer(self)
+        self._redraw_timer.setInterval(100)  # max 10 FPS
+        self._redraw_timer.timeout.connect(self._throttled_redraw)
+        self._redraw_timer.start()
 
         # Detecta tema atual na construção
         app = QApplication.instance()
@@ -45,7 +52,7 @@ class RttGraph(pg.PlotWidget):
 
     def apply_theme(self, dark: bool):
         self._apply_colors(dark)
-        self._redraw()
+        self._needs_redraw = True
 
     def _apply_colors(self, dark: bool):
         bg   = "#1e1e2e" if dark else "#e6e9ef"
@@ -56,7 +63,12 @@ class RttGraph(pg.PlotWidget):
     def add_point(self, ms: float, timeout: bool = False):
         self._history.append(ms)
         self._timeout_mask.append(timeout)
-        self._redraw()
+        self._needs_redraw = True
+
+    def _throttled_redraw(self):
+        if self._needs_redraw and self.isVisible():
+            self._redraw()
+            self._needs_redraw = False
 
     def _redraw(self):
         y = list(self._history)
@@ -88,4 +100,4 @@ class RttGraph(pg.PlotWidget):
     def reset(self):
         self._history = deque([0.0] * self.MAX_POINTS, maxlen=self.MAX_POINTS)
         self._timeout_mask = deque([False] * self.MAX_POINTS, maxlen=self.MAX_POINTS)
-        self._redraw()
+        self._needs_redraw = True

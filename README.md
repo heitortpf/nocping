@@ -58,6 +58,9 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 
 ## Changelog
 
+### v1.4.0
+- **Otimização de Performance Extrema (Zero Stuttering)** — O gargalo do banco de dados SQLite foi isolado em uma Thread Assíncrona (`queue.Queue()`), acabando com os travamentos da UI causados por contenção de locks (`_rw_lock`). Adição de Limitador de Taxa de Renderização (Throttling) nos gráficos RTT, que agora atualizam a um máximo de 10 FPS e consomem 0% de CPU em abas escondidas. O painel Monitor agora aguenta dezenas de hosts sem perda de fluidez.
+
 ### v1.3.0
 - **Quick Ping (Nova Aba Inicial)** — Diagnóstico ágil de um único host. Conta com gráfico RTT expandido, console de log integrado com auto-scroll e cópia, suporte a TCP/ICMP/UDP, e estatísticas em tempo real (RTT, Média, Jitter, Mínimo, Máximo, Perda).
 - **Fix: Botão Parar e reinício automático** — Corrigida race condition de sinais que impedia o botão Parar de funcionar; ao iniciar novo ping, o anterior é parado automaticamente, o console é limpo e o novo teste inicia (comportamento consistente com as demais abas).
