@@ -30,7 +30,7 @@ class PingWorker(QThread):
         self._stop = threading.Event()
         self._ip = None
         self._family = None
-        self._pid = os.getpid() & 0xFFFF
+        self._pid = threading.get_ident() & 0xFFFF
 
     def stop(self):
         self._stop.set()
@@ -210,7 +210,7 @@ class TracerouteWorker(QThread):
             self.error.emit(f"Resolve falhou: {e}")
             return
 
-        pid = os.getpid() & 0xFFFF
+        pid = threading.get_ident() & 0xFFFF
 
         for ttl in range(1, self.max_hops + 1):
             if self._stop.is_set():
@@ -271,7 +271,7 @@ class MTRWorker(QThread):
             self.error.emit(f"Resolve falhou: {e}")
             return
 
-        pid = os.getpid() & 0xFFFF
+        pid = threading.get_ident() & 0xFFFF
         seq = 0
         per_hop: dict[int, dict] = {}  # ttl -> {sent, received, rtts, ip, hostname}
         current_max = self.max_hops

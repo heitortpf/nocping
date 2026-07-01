@@ -199,6 +199,28 @@ def icmp_ping_once(ip: str, family: int, seq: int, pid: int,
                     ttl = str(data[8]) if not is_ipv6 else "-"
                     return PingResult(seq, True, ms, f"ttl={ttl}")
             elif i_type in (3, 11):
+                is_ours = False
+                if is_ipv6:
+                    if len(icmp) >= 8 + 40 + 8:
+                        inner_icmp = icmp[48:]
+                        inner_pid = struct.unpack("!H", inner_icmp[4:6])[0]
+                        inner_seq = struct.unpack("!H", inner_icmp[6:8])[0]
+                        if inner_pid == (pid & 0xFFFF) and inner_seq == (seq & 0xFFFF):
+                            is_ours = True
+                else:
+                    if len(icmp) >= 8 + 20 + 8:
+                        inner_ip = icmp[8:]
+                        inner_ihl = (inner_ip[0] & 0x0F) * 4
+                        if len(inner_ip) >= inner_ihl + 8:
+                            inner_icmp = inner_ip[inner_ihl:]
+                            inner_pid = struct.unpack("!H", inner_icmp[4:6])[0]
+                            inner_seq = struct.unpack("!H", inner_icmp[6:8])[0]
+                            if inner_pid == (pid & 0xFFFF) and inner_seq == (seq & 0xFFFF):
+                                is_ours = True
+                
+                if not is_ours:
+                    continue
+
                 code = icmp[1]
                 if i_type == 3 and code == 4:
                     return PingResult(seq, False, ms, "mtu exceeded")
@@ -311,13 +333,48 @@ def udp_ping_once(ip: str, port: int, family: int, seq: int,
             if icmp_sock in ready:
                 data, _ = icmp_sock.recvfrom(4096)
                 typ = _icmp_type(data, family)
+                
+                icmp_off = (data[0] & 0x0F) * 4 if not is_ipv6 else 0
+                icmp = data[icmp_off:]
+                
+                is_ours = False
+                try:
+                    src_port = udp.getsockname()[1]
+                    if is_ipv6:
+                        if len(icmp) >= 8 + 40 + 8:
+                            inner_ipv6 = icmp[8:]
+                            inner_proto = inner_ipv6[6]
+                            if inner_proto == socket.IPPROTO_UDP:
+                                inner_udp = inner_ipv6[40:]
+                                inner_sport = struct.unpack("!H", inner_udp[0:2])[0]
+                                inner_dport = struct.unpack("!H", inner_udp[2:4])[0]
+                                if inner_sport == src_port and inner_dport == port:
+                                    is_ours = True
+                    else:
+                        if len(icmp) >= 8 + 20 + 8:
+                            inner_ip = icmp[8:]
+                            inner_ihl = (inner_ip[0] & 0x0F) * 4
+                            if len(inner_ip) >= inner_ihl + 8:
+                                inner_proto = inner_ip[9]
+                                if inner_proto == socket.IPPROTO_UDP:
+                                    inner_udp = inner_ip[inner_ihl:]
+                                    inner_sport = struct.unpack("!H", inner_udp[0:2])[0]
+                                    inner_dport = struct.unpack("!H", inner_udp[2:4])[0]
+                                    if inner_sport == src_port and inner_dport == port:
+                                        is_ours = True
+                except Exception:
+                    pass
+
+                if not is_ours:
+                    continue
+
                 if not is_ipv6 and typ == 3:
                     code = data[((data[0] & 0xF) * 4) + 1]
                     if code == 4:
                         return PingResult(seq, False, ms, "fragmentation needed")
                     return PingResult(seq, True, ms, f"icmp type={typ}")
                 elif is_ipv6 and typ == 2:
-                    return PingResult(seq, False, ms, "fragmentation needed")
+                    return PingResult(seq, False, ms, "packet too big")
                 return PingResult(seq, True, ms, f"icmp type={typ}")
 
             if udp in ready:
@@ -590,6 +647,28 @@ def traceroute_hop(target_ip: str, family: int, ttl: int, seq: int, pid: int,
             from_ip = addr[0]
             time_exceeded = 3 if is_ipv6 else 11
             if i_type == time_exceeded:  # Time Exceeded (ICMPv4=11, ICMPv6=3)
+                is_ours = False
+                if is_ipv6:
+                    if len(icmp) >= 8 + 40 + 8:
+                        inner_icmp = icmp[48:]
+                        inner_pid = struct.unpack("!H", inner_icmp[4:6])[0]
+                        inner_seq = struct.unpack("!H", inner_icmp[6:8])[0]
+                        if inner_pid == (pid & 0xFFFF) and inner_seq == (seq & 0xFFFF):
+                            is_ours = True
+                else:
+                    if len(icmp) >= 8 + 20 + 8:
+                        inner_ip = icmp[8:]
+                        inner_ihl = (inner_ip[0] & 0x0F) * 4
+                        if len(inner_ip) >= inner_ihl + 8:
+                            inner_icmp = inner_ip[inner_ihl:]
+                            inner_pid = struct.unpack("!H", inner_icmp[4:6])[0]
+                            inner_seq = struct.unpack("!H", inner_icmp[6:8])[0]
+                            if inner_pid == (pid & 0xFFFF) and inner_seq == (seq & 0xFFFF):
+                                is_ours = True
+                
+                if not is_ours:
+                    continue
+
                 result["from_ip"] = from_ip
                 result["elapsed_ms"] = ms
                 return result
