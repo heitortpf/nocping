@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QPushButton, QPlainTextEdit, QTableWidget,
     QTableWidgetItem, QLabel, QHeaderView, QFrame, QSplitter,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 
 from core.models import IPVersion
@@ -16,9 +16,12 @@ from .widgets._utils import PRIMARY_BTN_STYLE
 
 
 class BannerTab(QWidget):
+    banner_finished = pyqtSignal(str, int, bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker: BannerWorker | None = None
+        self._last_success = False
         self._build_ui()
 
     def _build_ui(self):
@@ -137,7 +140,7 @@ class BannerTab(QWidget):
         try:
             self._worker.result.disconnect(self._on_result)
             self._worker.error.disconnect(self._on_error)
-            self._worker.finished.disconnect()
+            self._worker.finished.disconnect(self._on_finished)
         except RuntimeError:
             pass
         if self._worker.isRunning():
@@ -165,10 +168,17 @@ class BannerTab(QWidget):
         self._worker = BannerWorker(host, port, ip_version, timeout)
         self._worker.result.connect(self._on_result)
         self._worker.error.connect(self._on_error)
-        self._worker.finished.connect(lambda: self._btn_connect.setEnabled(True))
+        self._worker.finished.connect(self._on_finished)
         self._worker.start()
 
+    def _on_finished(self):
+        self._btn_connect.setEnabled(True)
+        host = self._inp_host.text().strip()
+        port = self._inp_port.value()
+        self.banner_finished.emit(host, port, self._last_success)
+
     def _on_result(self, data: dict):
+        self._last_success = True
         rtt = data.get("rtt_ms", 0.0)
         self._lbl_status.setText(
             f"<span style='color:#4ade80;'>● Conectado</span>"
@@ -205,6 +215,7 @@ class BannerTab(QWidget):
             self._lbl_tls_title.setText("🔓 Sem TLS detectado")
 
     def _on_error(self, msg: str):
+        self._last_success = False
         self._lbl_status.setText(
             f"<span style='color:#f87171;'>✕ {msg}</span>"
         )

@@ -2,6 +2,7 @@
 NOCPing — core/workers.py
 QThread workers que executam operações de rede e emitem sinais PyQt6.
 """
+import itertools
 import os
 import threading
 import socket as _socket
@@ -14,6 +15,16 @@ from .network import (
     scan_ports, banner_grab, _parse_ports, calc_stats, is_admin,
     traceroute_hop,
 )
+
+# PID ICMP único por worker (não por thread OS — o Windows recicla thread IDs
+# entre QThreads de vida curta, o que pode colidir com o de outro worker vivo).
+_icmp_pid_counter = itertools.count(1)
+_icmp_pid_lock = threading.Lock()
+
+
+def _next_icmp_pid() -> int:
+    with _icmp_pid_lock:
+        return next(_icmp_pid_counter) & 0xFFFF
 
 
 class PingWorker(QThread):
@@ -30,7 +41,7 @@ class PingWorker(QThread):
         self._stop = threading.Event()
         self._ip = None
         self._family = None
-        self._pid = threading.get_ident() & 0xFFFF
+        self._pid = _next_icmp_pid()
 
     def stop(self):
         self._stop.set()
@@ -210,7 +221,7 @@ class TracerouteWorker(QThread):
             self.error.emit(f"Resolve falhou: {e}")
             return
 
-        pid = threading.get_ident() & 0xFFFF
+        pid = _next_icmp_pid()
 
         for ttl in range(1, self.max_hops + 1):
             if self._stop.is_set():
@@ -271,7 +282,7 @@ class MTRWorker(QThread):
             self.error.emit(f"Resolve falhou: {e}")
             return
 
-        pid = threading.get_ident() & 0xFFFF
+        pid = _next_icmp_pid()
         seq = 0
         per_hop: dict[int, dict] = {}  # ttl -> {sent, received, rtts, ip, hostname}
         current_max = self.max_hops

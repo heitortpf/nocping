@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QLabel, QHeaderView, QFrame, QFileDialog,
 )
 from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtCore import pyqtSignal
 
 from core.models import IPVersion
 from core.workers import TracerouteWorker
@@ -17,9 +18,12 @@ from .widgets._utils import field_label as _lbl, rtt_color as _rtt_color, PRIMAR
 
 
 class TracerouteTab(QWidget):
+    traceroute_finished = pyqtSignal(str, int, bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker: TracerouteWorker | None = None
+        self._manually_stopped = False
         self._build_ui()
 
     def _build_ui(self):
@@ -179,6 +183,7 @@ class TracerouteTab(QWidget):
 
         self._cleanup_worker()
         self._table.setRowCount(0)
+        self._manually_stopped = False
         self._lbl_status.setText(f"Rastreando rota para  {host}…")
         self._lbl_status.setStyleSheet("color:#a78bfa; font-size:12px; padding:2px 0;")
         self._btn_start.setEnabled(False)
@@ -198,6 +203,7 @@ class TracerouteTab(QWidget):
         self._worker.start()
 
     def _stop(self):
+        self._manually_stopped = True
         if self._worker:
             self._worker.stop()
         self._btn_start.setEnabled(True)
@@ -277,6 +283,10 @@ class TracerouteTab(QWidget):
         self._btn_stop.setEnabled(False)
         self._btn_clear.setEnabled(True)
         self._btn_export.setEnabled(total > 0)
+        
+        if not self._manually_stopped:
+            host = self._inp_host.text().strip()
+            self.traceroute_finished.emit(host, total, reached)
 
     def _clear(self):
         self._table.setRowCount(0)

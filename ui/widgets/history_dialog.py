@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog,
     QMessageBox,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 
 from core.history_store import HistoryStore
@@ -21,10 +21,30 @@ _LIMITS = [("Últimos 100", 100), ("Últimos 500", 500),
            ("Últimos 1 000", 1000), ("Tudo", 0)]
 
 
+class _HistoryLoadWorker(QThread):
+    """Executa HistoryStore.query() fora da thread da GUI.
+
+    query() aguarda a fila de escrita assíncrona esvaziar (flush); sob carga
+    concorrente (várias abas gravando RTT ao mesmo tempo) isso pode demorar,
+    então não pode rodar na thread principal sem travar a janela.
+    """
+    loaded = pyqtSignal(list)
+
+    def __init__(self, host: str, limit: int, parent=None):
+        super().__init__(parent)
+        self._host = host
+        self._limit = limit
+
+    def run(self):
+        rows = HistoryStore.instance().query(self._host, self._limit)
+        self.loaded.emit(rows)
+
+
 class HistoryDialog(QDialog):
     def __init__(self, host: str, parent=None):
         super().__init__(parent)
         self._host = host
+        self._load_worker: "_HistoryLoadWorker | None" = None
         self.setWindowTitle(f"Histórico RTT — {host}")
         self.resize(860, 560)
         self.setMinimumSize(600, 400)
@@ -117,8 +137,20 @@ class HistoryDialog(QDialog):
     def _load(self):
         idx = self._cmb_limit.currentIndex()
         limit = _LIMITS[idx][1]
-        rows = HistoryStore.instance().query(self._host, limit if limit else 999_999)
 
+        if self._load_worker is not None:
+            self._load_worker.loaded.disconnect(self._on_rows_loaded)
+            self._load_worker.quit()
+            self._load_worker.wait(200)
+
+        self._lbl_stats.setText("Carregando…")
+        self._load_worker = _HistoryLoadWorker(
+            self._host, limit if limit else 999_999, self
+        )
+        self._load_worker.loaded.connect(self._on_rows_loaded)
+        self._load_worker.start()
+
+    def _on_rows_loaded(self, rows: list):
         self._table.setRowCount(0)
         elapsed_vals = []
         timestamps = []

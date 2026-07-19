@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QPushButton, QTableWidget, QTableWidgetItem,
     QLabel, QHeaderView, QFrame, QFileDialog,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 
 from core.models import IPVersion
@@ -39,10 +39,13 @@ def _loss_color(pct: float) -> str:
 
 
 class MTRTab(QWidget):
+    mtr_finished = pyqtSignal(str, int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker: MTRWorker | None = None
         self._row_map: dict[int, int] = {}  # ttl -> row index
+        self._manually_stopped = False
         self._build_ui()
 
     def _build_ui(self):
@@ -227,6 +230,7 @@ class MTRTab(QWidget):
         self._cleanup_worker()
         self._table.setRowCount(0)
         self._row_map.clear()
+        self._manually_stopped = False
         self._lbl_status.setText(f"Rastreando MTR para  {host}…")
         self._lbl_status.setStyleSheet("color:#a78bfa; font-size:12px; padding:2px 0;")
         self._btn_start.setEnabled(False)
@@ -248,6 +252,7 @@ class MTRTab(QWidget):
         self._worker.start()
 
     def _stop(self):
+        self._manually_stopped = True
         if self._worker:
             self._worker.stop()
         self._btn_start.setEnabled(True)
@@ -307,6 +312,10 @@ class MTRTab(QWidget):
         self._btn_stop.setEnabled(False)
         self._btn_clear.setEnabled(True)
         self._btn_export.setEnabled(self._table.rowCount() > 0)
+        
+        if not self._manually_stopped:
+            host = self._inp_host.text().strip()
+            self.mtr_finished.emit(host, self._table.rowCount())
 
     def _clear(self):
         self._table.setRowCount(0)

@@ -1,52 +1,39 @@
-# Plano de Refatoração e Otimização de Performance
+# Plano de Resolução: Notificações de Perda de Pacote
 
-Este documento detalha o plano de ação para tornar o NOCPing 100% rápido, escalável e com UI ultra-responsiva, resolvendo gargalos na arquitetura multithreading e no banco de dados.
+## Análise do Problema
+O usuário relatou que, ao ocorrer uma perda de pacote (packet loss), a notificação não sobe corretamente.
+Ao analisar a lógica no `HostCard` (`ui/widgets/host_card.py`) e `MainWindow` (`ui/main_window.py`), identificamos o seguinte comportamento:
+1. Quando um único ping falha (perda de pacote), o `HostCard` imediatamente altera o status para `HostStatus.DOWN`.
+2. A `MainWindow` detecta a mudança e emite a notificação de "Host offline" no System Tray, configurada para durar 4000ms.
+3. Se o próximo ping (1 segundo depois) for bem-sucedido, o `HostCard` altera o status de volta para `HostStatus.UP`.
+4. A `MainWindow` detecta a mudança e emite a notificação de "Host online" no System Tray, **sobrescrevendo instantaneamente** a notificação de falha que estava na tela há apenas 1 segundo.
+5. Como resultado, o usuário não consegue visualizar a notificação de queda/perda de pacote.
 
-## 🔴 User Review Required
+## Solução Proposta
 
-> [!IMPORTANT]
-> **Mudança de Paradigma no Monitor:** A troca de `QThread` (1 thread por host) para um `ThreadPoolExecutor` centralizado ou multiplexação de sockets alterará o núcleo do app. Isso melhorará drasticamente o consumo de CPU/RAM. Precisamos da sua aprovação antes de aplicar esta mudança arquitetural severa.
+Existem duas abordagens principais para resolver esse problema (precisamos do feedback do usuário):
 
-## ❓ Open Questions
+**Opção 1: Adicionar um limite de tempo (Debounce / Threshold) para o status**
+- Em vez de mudar para `DOWN` no primeiro pacote perdido, o host só é considerado `DOWN` após N falhas consecutivas (ex: 3 pacotes perdidos em sequência).
+- Se a intenção do usuário é ser alertado a cada pacote perdido individualmente, essa opção não é ideal. Mas é o padrão em ferramentas de monitoramento.
 
-> [!WARNING]
-> 1. Você tem algum limite de hosts que espera monitorar simultaneamente na aba Monitor? (ex: 50, 500, 1000+)
-> 2. O RTT Graph nas abas de Monitor deve atualizar em tempo real a cada ping, ou prefere que a interface atualize em "lotes" a cada 1 segundo para poupar a CPU quando houver 100+ hosts?
+**Opção 2: Desacoplar a Notificação de Perda de Pacote (Recomendada)**
+- Criar um novo tipo de notificação específica para "Perda de Pacote". 
+- Se a perda de pacote ocorrer, mas o host não ficar offline de forma persistente, o sistema exibirá uma notificação de "Aviso de Perda de Pacote" (ex: Host teve falha de resposta, perda X%).
+- Evitar exibir a notificação de "Host voltou ONLINE" se ele ficou DOWN por um tempo muito curto (ex: menos de 5 segundos), reduzindo o spam visual de notificações concorrentes.
+- Além disso, implementar uma tolerância no status `DOWN`: mudar para uma notificação de `WARNING` ao perder um pacote isolado e só ir para `DOWN` real após múltiplas falhas.
 
----
+## Alterações Necessárias
 
-## 🛠️ Proposed Changes
+1. **`core/models.py`**:
+   - Adicionar `HostStatus.WARNING` (ou `DEGRADED`) para representar o estado onde pacotes isolados estão sendo perdidos.
 
-### Core Network & Workers (Backend)
-O principal gargalo atual é a explosão de threads. O `PingWorker` herda de `QThread`, o que significa que 100 hosts = 100 threads pesadas ativas na memória.
+2. **`ui/widgets/host_card.py`**:
+   - Adicionar controle de "falhas consecutivas" (consecutive_failures).
+   - Se falhar 1 vez: altera o status para `WARNING`.
+   - Se falhar > N vezes (ex: 3): altera para `DOWN`.
+   - Se voltar a ter sucesso: altera para `UP` e zera as falhas.
 
-#### [MODIFY] `core/workers.py`
-- Refatorar a emissão de sinais para evitar saturar o event loop principal. Se o usuário quiser 500 hosts, não podemos criar 500 QThreads. A longo prazo seria ideal usar um ThreadPool global, mas como otimização imediata sem reescrever todo o app, podemos garantir que as threads apenas durmam e usem sockets limpos, sem instanciar pesados timers de UI para cada uma.
-
-#### [MODIFY] `core/history_store.py`
-- **Gargalo:** Concorrência no SQLite pelo `_rw_lock` a cada ping.
-- Mover a persistência para uma Fila Assíncrona / Dedicada. As threads de ping vão apenas colocar os resultados num objeto `queue.Queue()`, e um único timer ou thread de fundo vai fazer o `INSERT` no SQLite em lotes. Isso remove o bloqueio de IO das threads.
-
----
-
-### Interface Gráfica (Frontend)
-Quando muitos `pyqtgraph` estão visíveis, desenhá-los ao mesmo tempo mata a fluidez (60 FPS) da aplicação.
-
-#### [MODIFY] `ui/widgets/rtt_graph.py`
-- Adicionar limitação de taxa de atualização (Throttle). O `_redraw()` será disparado por um `QTimer` global ou rate-limiter, ao invés de recalcular a cada única inserção.
-- Otimizar os arrays internos para usar numpy se aplicável, ou simplesmente travar os updates se a aba atual não estiver visível.
-
-#### [MODIFY] `ui/monitor_tab.py`
-- Pausar as atualizações dos gráficos (`HostCard`) quando a janela estiver minimizada ou em outra aba.
-
----
-
-## 🧪 Verification Plan
-
-### Automated Tests
-- Rodar o conjunto `pytest tests/ -v` para garantir que o refatoramento do DB não quebre a interface do SQLite.
-
-### Manual Verification
-- Inserir **50 hosts simultâneos** no MonitorTab.
-- Verificar o uso de CPU via Gerenciador de Tarefas: a meta é que a UI fique perfeitamente fluida.
-- O scroll na aba Monitor deve continuar a 60 fps, sem nenhum engasgo.
+3. **`ui/main_window.py`**:
+   - Adicionar tratamento para o status `WARNING`, disparando uma notificação de aviso de Perda de Pacote ("Pacote perdido no host X").
+   - Ajustar o fluxo de notificações para não sobrepor mensagens imediatamente de forma indesejada, possivelmente adicionando um pequeno delay ou dependendo das falhas consecutivas.

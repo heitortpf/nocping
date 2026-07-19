@@ -48,7 +48,7 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 
 ### Outras funcionalidades
 
-- **Notificações de sistema** — ícone na bandeja do sistema; alerta quando host fica OFFLINE ou volta ONLINE; toggle em `Visualizar → Notificações de host`
+- **Notificações de sistema** — ícone na bandeja do sistema; alerta sobre status de hosts (OFFLINE/ONLINE) no Monitor e Quick Ping, e notifica a conclusão de tarefas demoradas (Scan, Banner, Traceroute, MTR). Toggle em `Visualizar → Notificações de host`
 - **Histórico de RTT** — cada ping é persistido em SQLite local; botão "⏱ Histórico" em cada card exibe gráfico e tabela com exportação CSV
 - **Screenshot integrado** — `Arquivo → Salvar Screenshot...` (`Ctrl+P`); funciona mesmo rodando como Administrador
 - **Multi-janela** — `Ctrl+N` abre janelas adicionais com tema sincronizado
@@ -57,6 +57,9 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 ---
 
 ## Changelog
+
+### v1.5.0
+- **Notificações Globais de Sistema** — Notificações na bandeja do sistema para todas as abas. Receba alertas automáticos de conclusão ou erro ao finalizar tarefas como Port Scan, Traceroute, Banner Grab, MTR e Quick Ping. A aba Quick Ping agora também conta com alertas ao vivo de queda ou retorno de host (UP/DOWN) durante execuções prolongadas.
 
 ### v1.4.0
 - **Otimização de Performance Extrema (Zero Stuttering)** — O gargalo do banco de dados SQLite foi isolado em uma Thread Assíncrona (`queue.Queue()`), acabando com os travamentos da UI causados por contenção de locks (`_rw_lock`). Adição de Limitador de Taxa de Renderização (Throttling) nos gráficos RTT, que agora atualizam a um máximo de 10 FPS e consomem 0% de CPU em abas escondidas. O painel Monitor agora aguenta dezenas de hosts sem perda de fluidez.

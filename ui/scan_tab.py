@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QProgressBar, QLabel, QHeaderView, QFileDialog, QCheckBox,
 )
 from PyQt6.QtGui import QColor
+from PyQt6.QtCore import pyqtSignal
 
 from core.models import IPVersion
 from core.workers import ScanWorker
@@ -31,10 +32,13 @@ _PRESETS: list[tuple[str, str]] = [
 
 
 class ScanTab(QWidget):
+    scan_finished = pyqtSignal(str, int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker: ScanWorker | None = None
         self._results: list[tuple] = []
+        self._manually_stopped = False
         self._build_ui()
 
     def _build_ui(self):
@@ -220,6 +224,7 @@ class ScanTab(QWidget):
         self._results.clear()
         self._table.setRowCount(0)
         self._open_count = 0
+        self._manually_stopped = False
         self._lbl_open.setText("Abertas: 0")
         self._btn_export.setEnabled(False)
 
@@ -251,6 +256,7 @@ class ScanTab(QWidget):
         self._worker.start()
 
     def _stop(self):
+        self._manually_stopped = True
         if self._worker and self._worker.isRunning():
             self._worker.stop()
         self._btn_start.setEnabled(True)
@@ -302,6 +308,9 @@ class ScanTab(QWidget):
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
         self._btn_export.setEnabled(bool(self._results))
+        if not self._manually_stopped:
+            host = self._inp_host.text().strip()
+            self.scan_finished.emit(host, getattr(self, "_open_count", 0))
 
     def _on_error(self, msg: str):
         self._on_finished()

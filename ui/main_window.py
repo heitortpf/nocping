@@ -265,6 +265,8 @@ class MainWindow(QMainWindow):
         self._tabs.setDocumentMode(True)
 
         self._quick_ping = QuickPingTab()
+        self._quick_ping.ping_finished.connect(self._on_quick_ping_finished)
+        self._quick_ping.host_status_changed.connect(self._on_host_status_changed)
         self._monitor = MonitorTab()
         self._monitor.status_changed.connect(self._update_status_bar)
         self._monitor.host_status_changed.connect(self._on_host_status_changed)
@@ -291,18 +293,22 @@ class MainWindow(QMainWindow):
         if index == 2:
             from .scan_tab import ScanTab
             self._scan = ScanTab()
+            self._scan.scan_finished.connect(self._on_scan_finished)
             widget, label = self._scan, "🔍  Port Scan"
         elif index == 3:
             from .banner_tab import BannerTab
             self._banner = BannerTab()
+            self._banner.banner_finished.connect(self._on_banner_finished)
             widget, label = self._banner, "🔒  Banner / TLS"
         elif index == 4:
             from .traceroute_tab import TracerouteTab
             self._traceroute = TracerouteTab()
+            self._traceroute.traceroute_finished.connect(self._on_traceroute_finished)
             widget, label = self._traceroute, "📡  Traceroute"
         elif index == 5:
             from .mtr_tab import MTRTab
             self._mtr = MTRTab()
+            self._mtr.mtr_finished.connect(self._on_mtr_finished)
             widget, label = self._mtr, "📊  MTR"
         else:
             return
@@ -393,6 +399,40 @@ class MainWindow(QMainWindow):
                 "Erro no Host", f"Erro monitorando {host}",
                 QSystemTrayIcon.MessageIcon.Warning, 4000,
             )
+
+    def _on_quick_ping_finished(self, host: str, success: bool, msg: str):
+        if not self._notif_enabled: return
+        icon = QSystemTrayIcon.MessageIcon.Information if success else QSystemTrayIcon.MessageIcon.Warning
+        title = f"Ping Concluído: {host}" if success else f"Ping Falhou: {host}"
+        self._tray.showMessage(title, msg, icon, 4000)
+
+    def _on_scan_finished(self, host: str, open_ports: int):
+        if not self._notif_enabled: return
+        icon = QSystemTrayIcon.MessageIcon.Information
+        title = f"Scan Concluído: {host}"
+        msg = f"{open_ports} portas abertas encontradas." if open_ports > 0 else "Nenhuma porta aberta encontrada."
+        self._tray.showMessage(title, msg, icon, 4000)
+
+    def _on_banner_finished(self, host: str, port: int, success: bool):
+        if not self._notif_enabled: return
+        icon = QSystemTrayIcon.MessageIcon.Information if success else QSystemTrayIcon.MessageIcon.Warning
+        title = f"Análise Concluída: {host}:{port}" if success else f"Falha na Análise: {host}:{port}"
+        msg = "Informações capturadas com sucesso." if success else "Não foi possível obter dados."
+        self._tray.showMessage(title, msg, icon, 4000)
+
+    def _on_traceroute_finished(self, host: str, hops: int, reached: bool):
+        if not self._notif_enabled: return
+        icon = QSystemTrayIcon.MessageIcon.Information if reached else QSystemTrayIcon.MessageIcon.Warning
+        title = f"Traceroute Concluído: {host}" if reached else f"Traceroute Incompleto: {host}"
+        msg = f"Destino alcançado em {hops} saltos." if reached else "Limite de saltos atingido sem alcançar o destino."
+        self._tray.showMessage(title, msg, icon, 4000)
+
+    def _on_mtr_finished(self, host: str, hops: int):
+        if not self._notif_enabled: return
+        icon = QSystemTrayIcon.MessageIcon.Information
+        title = f"MTR Concluído: {host}"
+        msg = "Todos os ciclos configurados foram finalizados."
+        self._tray.showMessage(title, msg, icon, 4000)
 
     def _open_new_window(self):
         win = MainWindow()

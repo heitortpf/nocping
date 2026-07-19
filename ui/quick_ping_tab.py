@@ -14,12 +14,11 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit, QSplitter, QFileDialog, QSizePolicy,
     QApplication,
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor
 
-from core.models import ProbeConfig, ProbeMode, IPVersion, PingResult
+from core.models import ProbeConfig, ProbeMode, IPVersion, PingResult, HostStatus
 from core.workers import PingWorker
-from .widgets.rtt_graph import RttGraph
 from .widgets._utils import field_label as _lbl, rtt_color as _rtt_color
 
 
@@ -99,6 +98,8 @@ def _hline() -> QFrame:
 
 class QuickPingTab(QWidget):
     MAX_CONSOLE_LINES = 5000
+    ping_finished = pyqtSignal(str, bool, str)
+    host_status_changed = pyqtSignal(str, object, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -272,14 +273,15 @@ class QuickPingTab(QWidget):
         )
         graph_inner.addWidget(graph_title)
 
-        self._graph = RttGraph()
-        self._graph.MAX_POINTS = 120
-        self._graph.reset()
-        self._graph.setMinimumHeight(140)
-        self._graph.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        graph_inner.addWidget(self._graph, 1)
+        # RttGraph importa pyqtgraph (~200ms na primeira vez) — como Quick Ping
+        # é a aba inicial construída eagerly, adiamos essa construção para depois
+        # do primeiro paint da janela (QTimer.singleShot(0, ...)), em vez de pagar
+        # esse custo antes de window.show().
+        self._graph = None
+        self._graph_inner = graph_inner
+        self._graph_placeholder = QWidget()
+        graph_inner.addWidget(self._graph_placeholder, 1)
+        QTimer.singleShot(0, self._init_graph)
 
         top_layout.addWidget(graph_frame, 7)
 
@@ -494,6 +496,22 @@ class QuickPingTab(QWidget):
         self._btn_ping.setEnabled(True)
         self._btn_stop.setEnabled(False)
 
+    def _init_graph(self):
+        """Constrói o RttGraph (import de pyqtgraph incluso) após o primeiro paint."""
+        if self._graph is not None:
+            return
+        from .widgets.rtt_graph import RttGraph
+        self._graph = RttGraph()
+        self._graph.MAX_POINTS = 120
+        self._graph.reset()
+        self._graph.setMinimumHeight(140)
+        self._graph.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self._graph_inner.replaceWidget(self._graph_placeholder, self._graph)
+        self._graph_placeholder.deleteLater()
+        self._graph_placeholder = None
+
     def _reset_state(self):
         self._results.clear()
         self._ok_count = 0
@@ -505,6 +523,9 @@ class QuickPingTab(QWidget):
         self._resolved_ip = ""
         self._resolved_ver = ""
         self._start_time = None
+        self._last_status = None
+        if self._graph is None:
+            self._init_graph()
         self._graph.reset()
         self._reset_stats_display()
 
@@ -546,6 +567,14 @@ class QuickPingTab(QWidget):
                 self._max_ms = r.elapsed_ms
 
         # Status
+        new_status = HostStatus.UP if r.success else HostStatus.DOWN
+        if getattr(self, "_last_status", None) != new_status:
+            old_status = getattr(self, "_last_status", None)
+            if old_status is not None:
+                host = self._inp_host.text().strip()
+                self.host_status_changed.emit(host, old_status, new_status)
+            self._last_status = new_status
+
         if r.success:
             self._set_status("ONLINE", "#4ade80")
         else:
@@ -594,10 +623,24 @@ class QuickPingTab(QWidget):
 
         if total > 0 and self._ok_count > 0:
             self._set_status("CONCLUÍDO", "#4ade80")
+            success = True
         elif total > 0:
             self._set_status("CONCLUÍDO", "#f87171")
+            success = False
         else:
             self._set_status("CONCLUÍDO", "#6b7280")
+            success = False
+
+        if total > 0:
+            avg = self._sum_ms / ok if ok else 0.0
+            lost = total - ok
+            loss_pct = lost / total * 100
+            if success:
+                msg = f"Média: {avg:.1f}ms | Perda: {loss_pct:.1f}%"
+            else:
+                msg = f"Host inalcançável ({loss_pct:.1f}% de perda)"
+            host = self._inp_host.text().strip()
+            self.ping_finished.emit(host, success, msg)
 
     def _on_mode_changed(self):
         is_icmp = self._cmb_mode.currentData() == ProbeMode.ICMP
@@ -760,7 +803,8 @@ class QuickPingTab(QWidget):
         self._console.setStyleSheet(
             _CONSOLE_STYLE_DARK if dark else _CONSOLE_STYLE_LIGHT
         )
-        self._graph.apply_theme(dark)
+        if self._graph is not None:
+            self._graph.apply_theme(dark)
 
     # ------------------------------------------------------------------
     # Cleanup

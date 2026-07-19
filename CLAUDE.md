@@ -76,14 +76,16 @@ main.py                  — entry point (carrega NOCPing.ico via QIcon)
 take_shots.py            — captura automática de screenshots das 5 abas via win32gui + PIL
 docs/
   PLAN-features.md       — plano de features executado na v1.1.0
+  PLAN.md                — plano em aberto (proposta de status WARNING para perda de pacote isolada, ver seção Pendências)
 core/
   models.py              — dataclasses e enums (PingResult, ProbeConfig, ProbeMode, IPVersion, HostStatus)
   network.py             — funções de rede puras (sem GUI)
   workers.py             — QThread workers que chamam network.py e emitem sinais PyQt6
   config_store.py        — persistência da lista de hosts monitorados (nocping_hosts.json)
-  history_store.py       — singleton SQLite thread-safe para histórico de RTT por host
+  history_store.py       — singleton SQLite thread-safe (fila assíncrona) para histórico de RTT por host
 ui/
   main_window.py         — janela principal, temas, multi-janela, screenshot, bandeja
+  quick_ping_tab.py      — aba inicial: ping rápido de host único (TCP/ICMP/UDP), gráfico RTT expandido, console de log
   monitor_tab.py         — aba de monitoramento multi-host estilo vmPing
   scan_tab.py            — aba de port scan TCP/UDP
   banner_tab.py          — aba de banner grab + inspeção TLS/SSL
@@ -138,11 +140,24 @@ Necessário porque o NOCPing roda como Administrador e o UIPI do Windows impede 
 
 `QApplication.aboutToQuit` está conectado a `_shutdown()`, que encerra todos os workers:
 ```python
+self._quick_ping.cleanup()
 for card in self._monitor._cards: card.stop()
-self._scan._cleanup_worker()
-self._banner._cleanup_worker()
+if self._scan: self._scan._cleanup_worker()
+if self._banner: self._banner._cleanup_worker()
 # TracerouteWorker e MTRWorker: stop() + wait(500)
 ```
+As abas Scan/Banner/Traceroute/MTR são lazy-inicializadas (só no primeiro clique) — por isso os `if self._scan`/`if self._banner` antes de limpar: podem ser `None` se a aba nunca foi aberta.
+
+---
+
+## Quick Ping (ui/quick_ping_tab.py)
+
+Aba inicial da aplicação (desde v1.3.0) — diagnóstico ágil de um único host, independente do Monitor.
+
+- Suporta TCP/ICMP/UDP; gráfico RTT expandido + console de log estilo terminal (auto-scroll e cópia)
+- Stats em tempo real: RTT atual, média, jitter, mínimo, máximo, perda
+- Ao iniciar um novo ping (mudar IP/host), o worker anterior é parado automaticamente e o console é limpo antes do novo teste começar — evita a race condition do botão "Parar" (corrigida na v1.3.0)
+- Usa `threading.get_ident() & 0xFFFF` como PID ICMP único da thread — ver seção **ICMP: PID por thread e Deep Packet Inspection** abaixo, pois esta aba compartilha `icmp_ping_once()` com o Monitor e pode sofrer cross-talk se essa regra for quebrada
 
 ---
 
@@ -253,7 +268,9 @@ Usa `threading.Event.wait(timeout)` no intervalo entre pings — para imediatame
 
 ## Histórico de RTT (core/history_store.py + ui/widgets/history_dialog.py)
 
-- `HistoryStore` é singleton thread-safe (usa `threading.Lock` + `check_same_thread=False`)
+- `HistoryStore` é singleton thread-safe (`check_same_thread=False`, modo WAL)
+- **Escrita assíncrona (v1.4.0):** `record()` apenas enfileira (`queue.Queue`) e retorna em O(1), sem bloquear a thread do worker; uma thread daemon dedicada (`_db_worker`) drena a fila em lotes de até `_BATCH_SIZE=50` e faz `executemany()` + `commit()` único por lote — isso eliminou o stuttering de UI causado por contenção no `_rw_lock` quando dezenas de hosts gravavam RTT simultaneamente
+- `flush()` (`queue.join()`) força esperar a fila esvaziar antes de ler — usado internamente por `query()`/`clear()`/`hosts()` para garantir leitura consistente
 - Banco em `nocping_history.db` na raiz do projeto (ignorado pelo git)
 - Schema: tabela `rtt_history(id, host, ts, success, elapsed, note)` + índice `(host, ts)`
 - Métodos: `record(host, result)`, `query(host, last_n) → list[dict]`, `clear(host)`, `hosts()`
@@ -276,6 +293,7 @@ Usa `threading.Event.wait(timeout)` no intervalo entre pings — para imediatame
 - `apply_theme(dark: bool)` — atualiza background e cor dos eixos
 - `_apply_colors(dark)` — `#1e1e2e`/`#e6e9ef` de fundo; eixo cinza adaptativo
 - Cor da curva via `rtt_color(avg)` de `_utils`
+- **Throttling de renderização (v1.4.0):** `_redraw_timer` (QTimer, 100ms) limita o redesenho a no máximo 10 FPS; novos pontos só marcam `_needs_redraw = True` e o redesenho real (`_throttled_redraw`) só ocorre se o widget estiver visível (`self.isVisible()`) — abas/gráficos ocultos consomem 0% CPU mesmo recebendo dados
 
 ---
 
@@ -285,6 +303,18 @@ Usa `threading.Event.wait(timeout)` no intervalo entre pings — para imediatame
 payload = b"nocping" + bytes(range(25)) if length is None else b"A" * length
 # Total: 8 bytes header + 7 (b"nocping") + 25 = 40 bytes
 ```
+
+---
+
+## ICMP: PID por thread e Deep Packet Inspection (core/network.py + core/workers.py)
+
+### Problema histórico resolvido
+Um socket ICMP raw recebe **todas** as respostas ICMP do sistema, não só as do processo. Com Quick Ping, Monitor e MTR rodando ao mesmo tempo (cada um em sua própria `QThread`), uma resposta destinada a uma aba podia ser lida por outra, causando perda de pacote reportada indevidamente e cross-talk de RTT entre abas.
+
+### Solução
+- Cada thread que envia ICMP (`PingWorker`, `TracerouteWorker`, `MTRWorker`) gera seu próprio identificador com `pid = threading.get_ident() & 0xFFFF` — nunca reutilizar um PID fixo ou compartilhado entre workers.
+- `icmp_ping_once()` e `traceroute_hop()` (`core/network.py`) fazem **Deep Packet Inspection**: para pacotes Echo Reply, o `pid`/`seq` do cabeçalho ICMP são comparados diretamente; para erros ICMP (Time Exceeded, Destination Unreachable), o `pid`/`seq` originais são extraídos do payload interno (pacote IP+ICMP encapsulado no corpo do erro) e comparados — um pacote só é aceito se `pid` **e** `seq` baterem com o que foi enviado por aquela thread.
+- Ao adicionar qualquer novo caminho que envie ICMP, sempre gerar o PID via `threading.get_ident()` dentro da própria thread e sempre filtrar respostas por `pid`+`seq` antes de aceitá-las — do contrário reintroduz o bug de cross-talk entre abas.
 
 ---
 
@@ -329,6 +359,8 @@ Compila automaticamente para Windows, Linux e macOS e publica na página de Rele
 - `v1.0.0` — versão inicial (Monitor, Port Scan, Banner/TLS, Traceroute)
 - `v1.1.0` — MTR, histórico SQLite, bandeja+notificações, probes UDP extras, screenshot integrado
 - `v1.2.0` — Refatoração de performance, modo WAL no SQLite, melhorias visuais e remoção do minimizar para bandeja
+- `v1.3.0` — aba Quick Ping (nova aba inicial), fix de race condition no botão Parar + auto-restart ao trocar de host
+- `v1.4.0` — escrita assíncrona no SQLite via fila (`HistoryStore`), throttling de renderização do gráfico RTT (máx. 10 FPS); posteriormente, correção de packet loss e cross-talk entre MTR e Ping via Deep Packet Inspection + PID ICMP único por thread (ver seção **ICMP: PID por thread e Deep Packet Inspection**)
 
 ### Repositório
 https://github.com/heitortpf/nocping
@@ -337,9 +369,9 @@ https://github.com/heitortpf/nocping
 
 ## Pendências / ideias para próximas sessões
 
+- **Notificação de perda de pacote isolada (proposta em aberto, `docs/PLAN.md`):** hoje um único ping falho já marca `HostStatus.DOWN` e dispara notificação, que é sobrescrita 1s depois se o host volta a responder — o usuário nunca vê o alerta de perda pontual. Proposta: adicionar `HostStatus.WARNING`/`DEGRADED` + contador de falhas consecutivas em `HostCard` (só vira `DOWN` após N falhas seguidas), com notificação de bandeja dedicada para o warning. Aguardando decisão do usuário antes de implementar (`docs/PLAN.md` tem as opções detalhadas).
 - Ícone da aplicação no macOS como `.icns` nativo (atualmente convertido pelo Pillow no build)
 - Empacotamento com instalador (NSIS no Windows, .deb no Linux, .dmg no macOS)
 - Mais probes UDP: porta 67 DHCP broadcast (atualmente envia unicast), 5353 multicast real (atualmente envia unicast para o host)
 - Notificação de bandeja também para hosts em ERRO (atualmente só UP/DOWN)
 - Gráfico do `HistoryDialog` com eixo X em timestamp legível (atualmente índice sequencial)
-- Adicionar `HistoryStore` ao `closeEvent`/`_shutdown` — fechar conexão SQLite explicitamente
