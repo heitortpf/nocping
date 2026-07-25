@@ -18,6 +18,15 @@ def store(tmp_path, monkeypatch):
     hs.HistoryStore._instance = None          # reset singleton
     instance = hs.HistoryStore.instance()
     yield instance
+    # close() para a _db_worker thread e fecha a conexão sqlite -- sem
+    # isso, cada teste que usa esta fixture vazava uma thread _db_worker
+    # daemon nunca encerrada (só resetava o ponteiro do singleton, não
+    # parava a thread da instância anterior). Achado via CI Linux: ~8
+    # threads _db_worker penduradas (uma por teste deste arquivo) levaram
+    # a um "Fatal Python error: Aborted" bem na primeira construção de
+    # QApplication da suíte (test_multi_window_close.py, primeiro arquivo
+    # a precisar de Qt de verdade) -- não reproduzia no Windows/macOS.
+    instance.close()
     hs.HistoryStore._instance = None
 
 

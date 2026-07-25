@@ -50,22 +50,35 @@ class QuickPingGraphPanel(QFrame):
         # QTimer.singleShot(0, ...) agendado no __init__ só dispara no
         # próximo tick do event loop -- se a janela fechar/for destruída
         # antes disso (ex.: teste que cria e fecha a janela sem dar tempo
-        # pro tick rodar), self._inner (QVBoxLayout) já foi deletado no
-        # lado C++ e replaceWidget() abaixo lançaria RuntimeError. Achado
-        # via CI (Windows/macOS) no QA da v2.0.0 -- não reproduzia
-        # localmente por timing, mas é alcançável em uso real também
-        # (ex.: fechar a janela muito rápido após Ctrl+N).
+        # pro tick rodar), os objetos C++ por trás de self/self._inner já
+        # podem ter sido deletados quando este callback finalmente roda.
+        # Achado via CI (Windows/macOS/Linux) no QA da v2.0.0 -- não
+        # reproduzia localmente por timing, mas é alcançável em uso real
+        # também (ex.: fechar a janela muito rápido após Ctrl+N).
+        #
+        # sip.isdeleted(self) sozinho NÃO é suficiente: em CI observamos
+        # self._inner (QVBoxLayout, filho de self) já deletado enquanto
+        # sip.isdeleted(self) ainda reportava False -- a ordem de
+        # destruição dos objetos internos do Qt não é atômica o bastante
+        # pra confiar numa checagem só do widget pai. O try/except é o
+        # jeito correto de cobrir isso: qualquer uso de um objeto PyQt já
+        # deletado no lado C++ levanta RuntimeError, não importa qual
+        # objeto especificamente já foi destruído.
         if sip.isdeleted(self):
             return
-        from .rtt_graph import RttGraph
-        self._graph = RttGraph()
-        self._graph.MAX_POINTS = 120
-        self._graph.reset()
-        self._graph.setMinimumHeight(140)
-        self._graph.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        self._inner.replaceWidget(self._placeholder, self._graph)
+        try:
+            from .rtt_graph import RttGraph
+            graph = RttGraph()
+            graph.MAX_POINTS = 120
+            graph.reset()
+            graph.setMinimumHeight(140)
+            graph.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+            self._inner.replaceWidget(self._placeholder, graph)
+        except RuntimeError:
+            return
+        self._graph = graph
         self._placeholder.deleteLater()
         self._placeholder = None
 
@@ -76,10 +89,15 @@ class QuickPingGraphPanel(QFrame):
     def reset(self):
         if self._graph is None:
             self._init_graph()
-        self._graph.reset()
+        # _init_graph() pode não conseguir construir o gráfico (widget já
+        # deletado, ver comentário lá) e deixar self._graph None -- nesse
+        # caso não há nada mais pra resetar.
+        if self._graph is not None:
+            self._graph.reset()
 
     def add_point(self, ms: float, timeout: bool):
-        self._graph.add_point(ms, timeout)
+        if self._graph is not None:
+            self._graph.add_point(ms, timeout)
 
     def apply_theme(self, dark: bool):
         if self._graph is not None:
