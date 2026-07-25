@@ -326,16 +326,45 @@ Pré-requisito: `Visualizar → Notificações de host` marcado (é o padrão).
 
 ## Resultado
 
+**Checklist manual: PARCIAL, não 6/6.** Windows sem admin, redimensionamento,
+Ctrl+N, exportações, tema e notificações (Monitor + Quick Ping) foram
+verificados via automação nesta sessão (ver "Status desta rodada" no topo
+e os itens marcados `[x]` nas Seções 1–8). Os três itens abaixo **não**
+foram verificados manualmente — sem acesso a essas plataformas/privilégios
+neste ambiente:
+
+| Item | Status |
+|---|---|
+| Windows **com** Administrador (Seção 1.1) | ❌ Não verificado manualmente nesta sessão — sem acesso a elevação interativa (UAC) neste ambiente |
+| Linux com root (Seção 2.1) | ❌ Não verificado manualmente nesta sessão — sem acesso à plataforma neste ambiente |
+| macOS / Gatekeeper (Seção 3) | ❌ Não verificado manualmente nesta sessão — sem acesso à plataforma neste ambiente |
+
+**Justificativa de risco para taguear mesmo assim (decisão registrada
+2026-07-25):** os três itens acima dependem todos da mesma camada —
+`core/network.py`, onde vive a lógica privilegiada de ICMP/UDP raw socket
+(admin no Windows, root no Linux/macOS) e a checagem `is_admin()`.
+`core/network.py` **não foi alterado por nenhum commit desta sessão de
+redesign** (confirmado via `git log --oneline dd97645..HEAD -- core/network.py`,
+que não retorna nenhum commit — `dd97645` é a v1.5.0, tag anterior ao
+início do redesign). Todas as 6 fases desta sessão mexeram exclusivamente
+na camada de UI (`ui/`) mais o fix de `closeEvent`/notificações
+(`ui/main_window.py`, `ui/quick_ping_tab.py`) — nenhuma delas depende de
+privilégio elevado nem toca a lógica que os itens não verificados
+exercitariam. A lacuna é uma decisão consciente de escopo, não uma omissão:
+documentada aqui para quem revisar depois, não escondida.
+
 | Plataforma | Build testado | Aprovado? | Observações |
 |---|---|---|---|
-| Windows 10/11 | | ☐ Sim ☐ Não | |
-| Linux (distro: ____) | | ☐ Sim ☐ Não | |
-| macOS (versão: ____) | | ☐ Sim ☐ Não | |
+| Windows 10/11 | código-fonte, sem admin | ☑ Sim (parcial) ☐ Não | Sem admin: automatizado nesta sessão. Com admin: não verificado — ver acima |
+| Linux (distro: ____) | — | ☐ Sim ☑ Não verificado | Não testado nesta sessão (sem acesso à plataforma) |
+| macOS (versão: ____) | — | ☐ Sim ☑ Não verificado | Não testado nesta sessão (sem acesso à plataforma) |
 
-**Assinatura / responsável pelo QA:** ______________________
-**Data:** ______________________
+**Assinatura / responsável pelo QA:** automação desta sessão (Claude) + decisão de release do usuário
+**Data:** 2026-07-25
 
-Se todas as três plataformas estiverem aprovadas, a tag `v2.0.0` pode ser
-criada (`git tag v2.0.0 && git push origin v2.0.0`) — isso dispara o
-workflow `.github/workflows/build.yml`, que agora só builda/publica se o
-job `test` (pytest + pytest-qt) passar primeiro.
+**Decisão:** taguear `v2.0.0` com a lacuna acima documentada, não resolvida
+— justificativa: `core/network.py` intocado + CI builda e roda os 125
+testes automatizados nos 3 SOs (Windows/Linux/macOS) antes de publicar
+qualquer binário. Item de acompanhamento registrado em `CLAUDE.md` (seção
+"Pendências / ideias para próximas sessões") para validação manual numa
+sessão futura com acesso às plataformas.
