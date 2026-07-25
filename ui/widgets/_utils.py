@@ -1,31 +1,37 @@
 """
 NOCPing — ui/widgets/_utils.py
 Helpers compartilhados entre abas e widgets.
+
+As constantes/funções aqui agora derivam de ui/theme/tokens.py e
+ui/theme/components.py — mantidas com o mesmo nome e valor de sempre para
+não exigir mudanças nas abas existentes. Novo código deve importar
+diretamente de ui.theme.tokens / ui.theme.components.
 """
 from PyQt6.QtWidgets import QLabel
+
+from ..theme.tokens import DARK, TYPOGRAPHY
+from ..theme.components import PRIMARY_BTN_QSS
 
 
 def rtt_color(ms: float) -> str:
     """Cor hex baseada na latência: verde/amarelo/vermelho."""
-    if ms <= 0:   return "#f87171"
-    if ms < 50:   return "#4ade80"
-    if ms < 150:  return "#facc15"
-    return "#f87171"
+    if ms <= 0:   return DARK.danger
+    if ms < 50:   return DARK.success
+    if ms < 150:  return DARK.warning
+    return DARK.danger
 
 
 def field_label(text: str) -> QLabel:
     """Rótulo pequeno e muted para campos de formulário."""
     lbl = QLabel(text)
-    lbl.setStyleSheet("color:#6b7280; font-size:10px; letter-spacing:0.5px;")
+    style = TYPOGRAPHY.label
+    lbl.setStyleSheet(
+        f"color:{DARK.text_muted}; font-size:{style.size}px; letter-spacing:0.5px;"
+    )
     return lbl
 
 
-PRIMARY_BTN_STYLE = (
-    "QPushButton{background:#7c3aed;color:#fff;border-radius:6px;"
-    "font-size:13px;font-weight:bold;border:none;padding:0 16px;}"
-    "QPushButton:hover{background:#6d28d9;}"
-    "QPushButton:pressed{background:#5b21b6;}"
-)
+PRIMARY_BTN_STYLE = PRIMARY_BTN_QSS
 
 TABLE_STYLE = """
     QTableWidget {
