@@ -1,0 +1,223 @@
+Cores hex hardcoded em ui/ fora de ui/widgets/_utils.py
+Gerado em 2026-07-24 via: rg "#[0-9a-fA-F]{6}" ui --glob "*.py"
+_utils.py foi excluido intencionalmente (e o modulo centralizador, hex ali e esperado).
+Total: 199 ocorrencias em 10 arquivos.
+
+=== ui/main_window.py (61) ===
+22:    QPalette.ColorRole.Window:          "#11111b",
+23:    QPalette.ColorRole.WindowText:      "#cdd6f4",
+24:    QPalette.ColorRole.Base:            "#181825",
+25:    QPalette.ColorRole.AlternateBase:   "#1e1e2e",
+26:    QPalette.ColorRole.Text:            "#cdd6f4",
+27:    QPalette.ColorRole.Button:          "#313244",
+28:    QPalette.ColorRole.ButtonText:      "#cdd6f4",
+29:    QPalette.ColorRole.Mid:             "#45475a",
+30:    QPalette.ColorRole.Highlight:       "#7c3aed",
+31:    QPalette.ColorRole.HighlightedText: "#ffffff",
+32:    QPalette.ColorRole.ToolTipBase:     "#313244",
+33:    QPalette.ColorRole.ToolTipText:     "#cdd6f4",
+34:    QPalette.ColorRole.PlaceholderText: "#6b7280",
+35:    QPalette.ColorRole.Link:            "#89b4fa",
+39:    QPalette.ColorRole.Window:          "#eff1f5",
+40:    QPalette.ColorRole.WindowText:      "#4c4f69",
+41:    QPalette.ColorRole.Base:            "#ffffff",
+42:    QPalette.ColorRole.AlternateBase:   "#e6e9ef",
+43:    QPalette.ColorRole.Text:            "#4c4f69",
+44:    QPalette.ColorRole.Button:          "#dce0e8",
+45:    QPalette.ColorRole.ButtonText:      "#4c4f69",
+46:    QPalette.ColorRole.Mid:             "#bcc0cc",
+47:    QPalette.ColorRole.Highlight:       "#7c3aed",
+48:    QPalette.ColorRole.HighlightedText: "#ffffff",
+49:    QPalette.ColorRole.ToolTipBase:     "#dce0e8",
+50:    QPalette.ColorRole.ToolTipText:     "#4c4f69",
+51:    QPalette.ColorRole.PlaceholderText: "#9ca3af",
+52:    QPalette.ColorRole.Link:            "#1d4ed8",
+63:    color = QColor("#cdd6f4" if dark else "#4c4f69")
+92:        field_bg  = "#313244"; field_fg  = "#cdd6f4"
+93:        border    = "#45475a"; focus_border = "#7c3aed"
+94:        btn_bg    = "#45475a"; btn_hover = "#585b70"; btn_press = "#6c7086"
+95:        scroll_bg = "#1e1e2e"; scroll_h  = "#45475a"
+96:        tab_bg    = "#1e1e2e"; tab_fg    = "#9ca3af"; tab_fg_sel = "#cdd6f4"
+97:        pane_b    = "#313244"; splitter  = "#313244"
+98:        tip_fg    = "#cdd6f4"; tip_bg    = "#313244"
+99:        sel_bg    = "#7c3aed"
+101:        field_bg  = "#ffffff"; field_fg  = "#4c4f69"
+102:        border    = "#bcc0cc"; focus_border = "#7c3aed"
+103:        btn_bg    = "#dce0e8"; btn_hover = "#c8ccd4"; btn_press = "#bcc0cc"
+104:        scroll_bg = "#e6e9ef"; scroll_h  = "#bcc0cc"
+105:        tab_bg    = "#e6e9ef"; tab_fg    = "#9ca3af"; tab_fg_sel = "#4c4f69"
+106:        pane_b    = "#bcc0cc"; splitter  = "#dce0e8"
+107:        tip_fg    = "#4c4f69"; tip_bg    = "#dce0e8"
+108:        sel_bg    = "#7c3aed"
+117:    QTabBar::tab:selected {{ color:{tab_fg_sel}; border-bottom:2px solid #7c3aed; }}
+122:        selection-background-color:{sel_bg}; selection-color:#ffffff;
+128:        selection-background-color:{sel_bg}; selection-color:#ffffff;
+157:    "QMenuBar{background:#11111b;color:#cdd6f4;}"
+158:    "QMenuBar::item:selected{background:#313244;}"
+159:    "QMenu{background:#1e1e2e;color:#cdd6f4;border:1px solid #313244;}"
+160:    "QMenu::item:selected{background:#313244;}"
+164:    "QMenuBar{background:#eff1f5;color:#4c4f69;}"
+165:    "QMenuBar::item:selected{background:#dce0e8;}"
+166:    "QMenu{background:#ffffff;color:#4c4f69;border:1px solid #bcc0cc;}"
+167:    "QMenu::item:selected{background:#e6e9ef;}"
+170:DARK_STATUSBAR_STYLE  = "QStatusBar{background:#11111b;color:#6b7280;font-size:11px;}"
+171:LIGHT_STATUSBAR_STYLE = "QStatusBar{background:#eff1f5;color:#6b7280;font-size:11px;}"
+330:        self._lbl_up.setStyleSheet("color:#4ade80;")
+331:        self._lbl_down.setStyleSheet("color:#f87171;")
+335:        admin_color = "#4ade80"  if _admin else "#facc15"
+
+=== ui/quick_ping_tab.py (37) ===
+29:_STAT_LABEL_STYLE = "color:#6b7280; font-size:10px; letter-spacing:0.5px;"
+33:        background: #11111b;
+34:        color: #cdd6f4;
+35:        border: 1px solid #313244;
+40:        selection-background-color: #7c3aed;
+46:        background: #ffffff;
+47:        color: #4c4f69;
+48:        border: 1px solid #bcc0cc;
+53:        selection-background-color: #7c3aed;
+54:        selection-color: #ffffff;
+65:    "QPushButton{background:#7c3aed;color:#fff;border-radius:6px;"
+67:    "QPushButton:hover{background:#6d28d9;}"
+68:    "QPushButton:pressed{background:#5b21b6;}"
+73:    "QPushButton{background:#dc2626;color:#fff;border-radius:6px;"
+75:    "QPushButton:hover{background:#b91c1c;}"
+82:    lbl.setStyleSheet("color:#6b7280; font-size:18px; font-weight:bold;")
+312:        self._lbl_status_dot.setStyleSheet("color:#6b7280; font-size:18px;")
+315:        self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; font-weight:bold;")
+322:        self._lbl_resolved.setStyleSheet("color:#6b7280; font-size:10px;")
+425:            "color:#45475a; font-size:14px; line-height:1.8;"
+451:        self._set_status("INICIANDO…", "#a78bfa")
+495:        self._set_status("PARADO", "#6b7280")
+536:            w.setStyleSheet("color:#6b7280; font-size:18px; font-weight:bold;")
+538:        self._val_loss.setStyleSheet("color:#4ade80; font-size:18px; font-weight:bold;")
+540:        self._val_seq.setStyleSheet("color:#6b7280; font-size:18px; font-weight:bold;")
+579:            self._set_status("ONLINE", "#4ade80")
+581:            self._set_status("TIMEOUT", "#f87171")
+590:            self._val_rtt.setStyleSheet("color:#f87171; font-size:16px; font-weight:bold;")
+603:        self._set_status("ERRO", "#facc15")
+625:            self._set_status("CONCLUÍDO", "#4ade80")
+628:            self._set_status("CONCLUÍDO", "#f87171")
+631:            self._set_status("CONCLUÍDO", "#6b7280")
+676:            self._val_avg.setStyleSheet("color:#6b7280; font-size:18px; font-weight:bold;")
+686:            self._val_min.setStyleSheet("color:#6b7280; font-size:18px; font-weight:bold;")
+696:            self._val_max.setStyleSheet("color:#6b7280; font-size:18px; font-weight:bold;")
+699:        loss_c = "#f87171" if loss_pct > 5 else ("#facc15" if loss_pct > 0 else "#4ade80")
+712:            self._val_jitter.setStyleSheet("color:#6b7280; font-size:18px; font-weight:bold;")
+
+=== ui/widgets/host_card.py (22) ===
+22:    HostStatus.IDLE:    "#6b7280",
+23:    HostStatus.RUNNING: "#a78bfa",
+24:    HostStatus.UP:      "#4ade80",
+25:    HostStatus.DOWN:    "#f87171",
+26:    HostStatus.ERROR:   "#facc15",
+43:    lbl.setStyleSheet("color:#6b7280; font-size:10px; letter-spacing:0.5px;")
+128:            "QPushButton{background:transparent;color:#6b7280;border:none;font-size:14px;}"
+129:            "QPushButton:hover{color:#f87171;}"
+146:        self._lbl_mode.setStyleSheet("color:#6b7280; font-size:11px;")
+148:        self._lbl_ip.setStyleSheet("color:#6b7280; font-size:11px;")
+166:        ip_lbl.setStyleSheet("color:#6b7280; font-size:10px; letter-spacing:0.5px;")
+184:                QPushButton:checked { background:#7c3aed; color:#fff; font-weight:bold; }
+234:            "QPushButton{color:#7c3aed;font-size:10px;border:none;background:transparent;}"
+235:            "QPushButton:hover{color:#6d28d9;text-decoration:underline;}"
+262:            "QPushButton{background:#7c3aed;color:#fff;border-radius:5px;"
+264:            "QPushButton:hover{background:#6d28d9;}"
+351:            self._val_rtt.setStyleSheet("color:#f87171; font-size:16px; font-weight:bold;")
+360:        avg_c = _rtt_color(avg) if self._ok_count else "#6b7280"
+364:        loss_c = "#f87171" if loss_pct > 5 else ("#facc15" if loss_pct > 0 else "#4ade80")
+431:            w.setStyleSheet("color:#6b7280; font-size:20px; font-weight:bold;")
+448:    lbl.setStyleSheet("color:#6b7280; font-size:20px; font-weight:bold;")
+455:    lbl.setStyleSheet("color:#6b7280; font-size:10px;")
+
+=== ui/mtr_tab.py (19) ===
+33:        return "#4ade80"
+35:        return "#a3e635"
+37:        return "#facc15"
+38:    return "#f87171"
+143:        self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; padding:2px 0;")
+235:        self._lbl_status.setStyleSheet("color:#a78bfa; font-size:12px; padding:2px 0;")
+263:        self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; padding:2px 0;")
+268:            self._set_cell(row, _COL_IP,       ip or "* * *", "#6b7280" if not ip else "#cdd6f4")
+269:            self._set_cell(row, _COL_HOSTNAME, hostname or "—", "#9ca3af")
+274:        self._set_cell(row, _COL_HOP,      str(ttl),       "#6b7280")
+275:        self._set_cell(row, _COL_IP,       ip or "* * *",  "#6b7280" if not ip else "#cdd6f4")
+276:        self._set_cell(row, _COL_HOSTNAME, hostname or "—","#9ca3af")
+279:            self._set_cell(row, col, "—", "#6b7280")
+287:        self._set_cell(row, _COL_SENT,  str(stats["sent"]),           "#9ca3af")
+290:        self._set_cell(row, _COL_BEST,  self._fmt(stats["best_ms"]),  "#4ade80")
+292:        self._set_cell(row, _COL_STDEV, self._fmt(stats["stdev_ms"]), "#9ca3af")
+302:        self._lbl_status.setStyleSheet("color:#f87171; font-size:12px; padding:2px 0;")
+310:        self._lbl_status.setStyleSheet("color:#4ade80; font-size:12px; padding:2px 0;")
+325:        self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; padding:2px 0;")
+
+=== ui/traceroute_tab.py (16) ===
+113:        self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; padding:2px 0;")
+188:        self._lbl_status.setStyleSheet("color:#a78bfa; font-size:12px; padding:2px 0;")
+214:        self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; padding:2px 0;")
+229:            rtt_color = "#6b7280"
+230:            ip_color  = "#6b7280"
+232:            note_color = "#6b7280"
+236:            ip_color  = "#4ade80"
+238:            note_color = "#4ade80"
+242:            ip_color  = "#cdd6f4"
+244:            note_color = "#9ca3af"
+251:        self._table.setItem(row, 0, cell(str(ttl),   "#6b7280"))
+253:        self._table.setItem(row, 2, cell(hostname,    "#9ca3af"))
+260:        self._lbl_status.setStyleSheet("color:#f87171; font-size:12px; padding:2px 0;")
+276:            self._lbl_status.setStyleSheet("color:#4ade80; font-size:12px; padding:2px 0;")
+281:            self._lbl_status.setStyleSheet("color:#facc15; font-size:12px; padding:2px 0;")
+295:        self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; padding:2px 0;")
+
+=== ui/scan_tab.py (13) ===
+58:        lbl_pre.setStyleSheet("color:#9ca3af;")
+81:        lbl_t.setStyleSheet("color:#9ca3af;")
+89:        lbl_th.setStyleSheet("color:#9ca3af;")
+96:        lbl_ip.setStyleSheet("color:#9ca3af;")
+103:        lbl_proto.setStyleSheet("color:#9ca3af;")
+146:        self._chk_udp_filtered.setStyleSheet("color:#9ca3af; font-size:12px;")
+166:            QProgressBar::chunk { background:#7c3aed; border-radius:4px; }
+169:        self._lbl_open.setStyleSheet("color:#4ade80; font-size:12px; min-width:80px;")
+285:        status_color = "#4ade80"        if is_open else "#facc15"
+286:        proto_color  = "#60a5fa" if protocol == "UDP" else "#a78bfa"
+291:            (str(port),      "#4ade80"),
+293:            (svc,            "#9ca3af"),
+294:            (f"{ms:.1f} ms", "#cdd6f4"),
+
+=== ui/banner_tab.py (11) ===
+48:        lbl_t.setStyleSheet("color:#9ca3af;")
+74:        self._lbl_status.setStyleSheet("font-size:12px; color:#9ca3af;")
+87:        lbl_banner.setStyleSheet("color:#9ca3af; font-size:11px;")
+110:        self._lbl_tls_title.setStyleSheet("color:#9ca3af; font-size:11px;")
+184:            f"<span style='color:#4ade80;'>● Conectado</span>"
+185:            f"  RTT: <span style='color:#7c3aed;'>{rtt:.1f}ms</span>"
+203:                ("Versão TLS",   tls_ver or "—",               "#4ade80"),
+204:                ("Cifra",        data.get("cipher") or "—",    "#cdd6f4"),
+205:                ("Certificado CN", data.get("cn") or "—",      "#7c3aed"),
+206:                ("Validade",     data.get("expiry") or "—",    "#facc15"),
+220:            f"<span style='color:#f87171;'>✕ {msg}</span>"
+
+=== ui/widgets/history_dialog.py (10) ===
+85:            "QPushButton{background:#dc2626;color:#fff;border-radius:5px;"
+87:            "QPushButton:hover{background:#b91c1c;}"
+98:        self._plot.setBackground("#1e1e2e")
+105:        self._curve = self._plot.plot(pen=pg.mkPen("#4ade80", width=1.5),
+106:                                      fillLevel=0, brush=pg.mkBrush("#4ade8018"))
+132:        self._lbl_stats.setStyleSheet("color:#6b7280; font-size:11px;")
+169:            self._set_cell(row, 0, ts_str, "#9ca3af")
+171:                           "#4ade80" if ok else "#f87171")
+173:                           _rtt_color(ms) if ok else "#f87171")
+174:            self._set_cell(row, 3, note, "#6b7280")
+
+=== ui/monitor_tab.py (5) ===
+103:        div.setStyleSheet("color:#313244;")
+111:        lbl_global.setStyleSheet("color:#6b7280; font-size:11px;")
+124:                    "QPushButton{background:#dc2626;color:#fff;border-radius:5px;"
+126:                    "QPushButton:hover{background:#b91c1c;}"
+175:            "color:#45475a; font-size:14px; line-height:1.8;"
+
+=== ui/widgets/rtt_graph.py (5) ===
+46:            pen=pg.mkPen("#4ade80", width=1.5),
+48:            brush=pg.mkBrush("#4ade8018"),
+58:        bg   = "#1e1e2e" if dark else "#e6e9ef"
+92:            brush=pg.mkBrush("#f87171"),
+81:        color = "#6b7280" if avg <= 0 else rtt_color(avg)
