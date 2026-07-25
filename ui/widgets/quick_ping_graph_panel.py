@@ -8,6 +8,7 @@ para depois do primeiro paint da janela, exatamente como antes — Quick Ping é
 a aba inicial construída eagerly, então esse adiamento evita pagar o custo do
 import antes de window.show().
 """
+from PyQt6 import sip
 from PyQt6.QtWidgets import QFrame, QVBoxLayout, QWidget, QLabel, QSizePolicy
 from PyQt6.QtCore import QTimer
 
@@ -45,6 +46,16 @@ class QuickPingGraphPanel(QFrame):
     def _init_graph(self):
         """Constrói o RttGraph (import de pyqtgraph incluso) após o primeiro paint."""
         if self._graph is not None:
+            return
+        # QTimer.singleShot(0, ...) agendado no __init__ só dispara no
+        # próximo tick do event loop -- se a janela fechar/for destruída
+        # antes disso (ex.: teste que cria e fecha a janela sem dar tempo
+        # pro tick rodar), self._inner (QVBoxLayout) já foi deletado no
+        # lado C++ e replaceWidget() abaixo lançaria RuntimeError. Achado
+        # via CI (Windows/macOS) no QA da v2.0.0 -- não reproduzia
+        # localmente por timing, mas é alcançável em uso real também
+        # (ex.: fechar a janela muito rápido após Ctrl+N).
+        if sip.isdeleted(self):
             return
         from .rtt_graph import RttGraph
         self._graph = RttGraph()
