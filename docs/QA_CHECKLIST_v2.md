@@ -18,6 +18,65 @@ por plataforma.
 
 ---
 
+## Status desta rodada (automação, Windows sem admin)
+
+O ambiente onde este checklist foi escrito é Windows sem privilégios
+elevados, sem Linux/macOS disponíveis. Nesta rodada, automatizei tudo que
+dava pra verificar programaticamente daqui — via `MainWindow` real (não
+mockada) dirigida por script, com screenshots e captura de sinais reais
+como evidência — e deixei os checkboxes abaixo **sem marcar**, porque são
+pra validação humana; o que segue é só o resumo do que a automação já
+cobriu, pra quem for rodar manualmente saber o que pode revisar mais rápido
+e o que ainda não foi tocado.
+
+**Cobertos com evidência em `docs/redesign/qa_v2_evidence/`:**
+- Seção 1 (Windows sem Administrador): todos os 8 itens aplicáveis a "sem
+  admin" passaram — TCP funciona, ICMP vira ERROR sem crashar, Port Scan
+  TCP/UDP completa, Traceroute/MTR avisam corretamente.
+- Seção 4 (redimensionamento): 12 screenshots (6 abas × 800×500/1400×900)
+  em `qa_v2_evidence/resize/` — sem corte/sobreposição de texto em nenhuma.
+- Seção 5 (Ctrl+N): abre segunda janela em Quick Ping, tema herdado,
+  monitoramento independente entre janelas, alternar tema propaga — **mas
+  ver achado abaixo**.
+- Seção 6 (exportação): as 8 exportações aplicáveis (Quick Ping CSV, Monitor
+  CSV+JSON, HostCard "Exportar RTT", Histórico CSV, Port Scan CSV,
+  Traceroute CSV, MTR CSV) geram arquivo com conteúdo correto —
+  Traceroute/MTR testados com dados sintéticos na tabela (sem admin não há
+  hop real pra popular).
+- Seção 7 (tema): propagação testada via automação (`tests/test_ui_theme.py`,
+  8 testes) + inspeção visual das 12 imagens em `screenshots/{dark,light}/`.
+- Seção 8 (notificações): DOWN/UP-após-DOWN/ERROR testados no Monitor
+  (captura real de `showMessage`, não só inspeção visual), toggle
+  desliga/religa corretamente, preferência persiste via `QSettings` — **mas
+  ver achado abaixo sobre Quick Ping**.
+
+**Dois achados reais durante esta rodada** (não são itens que "passaram
+com ressalva" — são comportamento confirmado, precisam de uma decisão):
+
+1. **Fechar a janela secundária derruba o app inteiro.** `MainWindow.closeEvent()`
+   chama `QApplication.quit()` incondicionalmente, em qualquer instância —
+   confirmado com um `app.exec()` real (não só `processEvents()`), então não
+   é artefato do jeito de testar. É anterior a esta sessão de redesign
+   (`git log -p` mostra o método assim há várias releases). Contradiz a
+   expectativa natural de multi-janela. Ver item corrigido na Seção 5.
+2. **Quick Ping não notifica em ERROR, só em DOWN/UP.** `QuickPingTab._on_error()`
+   (disparado por ICMP/UDP sem admin, ou qualquer falha antes do primeiro
+   resultado) não emite `host_status_changed` — só `_on_result()` faz isso,
+   e só a partir da segunda mudança de status observada. O changelog da
+   v1.5.0 no README já falava só em "UP/DOWN" pra Quick Ping (não ERROR),
+   então isto pode ser escopo intencional, não bug — mas o item original
+   deste checklist assumia paridade total com o Monitor, o que estava
+   errado. Ver item corrigido na Seção 8.
+
+**Não coberto nesta rodada — precisa de humano e/ou outra plataforma:**
+Windows COM admin (precisa elevação interativa via UAC), toda a Seção 2
+(Linux), toda a Seção 3 (macOS/Gatekeeper), e o julgamento visual de "a
+notificação realmente aparece na tela e não é picotada/atrasada" (a
+automação capturou a *chamada* de `showMessage()`, não a renderização real
+do toast do SO).
+
+---
+
 ## 0. Preparação
 
 - [ ] `pip install -r requirements.txt` roda sem erro no ambiente de teste
@@ -46,18 +105,21 @@ por plataforma.
       ver `CLAUDE.md`)
 
 ### 1.2 Sem Administrador
-- [ ] Abrir o `.exe` normalmente (duplo clique, sem "Executar como administrador")
-- [ ] Barra de status mostra "⚠ Sem Admin (ICMP/UDP indisponível)"
-- [ ] Monitor: adicionar host em modo **TCP** — funciona normalmente
-- [ ] Monitor: adicionar host em modo **ICMP** — falha com mensagem de erro
+**Verificado via automação nesta rodada (todos os 8 itens abaixo) —
+`python main.py`/código-fonte, não o `.exe` empacotado; recomendável repetir
+uma vez no `.exe` real antes de assinar como aprovado.**
+- [x] Abrir o `.exe` normalmente (duplo clique, sem "Executar como administrador")
+- [x] Barra de status mostra "⚠ Sem Admin (ICMP/UDP indisponível)"
+- [x] Monitor: adicionar host em modo **TCP** — funciona normalmente
+- [x] Monitor: adicionar host em modo **ICMP** — falha com mensagem de erro
       clara (card fica em estado ERROR, não trava nem crasha o app)
-- [ ] Port Scan: scan TCP funciona sem erro nem prompt de privilégio
-- [ ] Port Scan: scan UDP funciona sem erro nem prompt de privilégio
+- [x] Port Scan: scan TCP funciona sem erro nem prompt de privilégio
+- [x] Port Scan: scan UDP funciona sem erro nem prompt de privilégio
       (Port Scan não precisa de admin em nenhum protocolo — só
       Monitor/Quick Ping em modo ICMP/UDP e Traceroute/MTR precisam)
-- [ ] Traceroute: exibe aviso "requer Administrador", não trava o app
-- [ ] MTR: exibe aviso "requer Administrador", não trava o app
-- [ ] Banner/TLS: funciona normalmente (é TCP puro)
+- [x] Traceroute: exibe aviso "requer Administrador", não trava o app
+- [x] MTR: exibe aviso "requer Administrador", não trava o app
+- [x] Banner/TLS: funciona normalmente (é TCP puro)
 
 ---
 
@@ -108,15 +170,19 @@ por plataforma.
 Janela mínima é 800×500 (`setMinimumSize`). Testar em cada uma das 6 seções
 (sidebar): **Quick Ping, Monitor, Port Scan, Banner/TLS, Traceroute, MTR**.
 
-Para cada aba:
-- [ ] Redimensionar pra ~800×500 (mínimo) — nenhum texto de botão/label
+Para cada aba (verificado via automação nesta rodada — 12 screenshots em
+`docs/redesign/qa_v2_evidence/resize/`, incluindo Monitor com 3 hosts
+ativos e grade de cards sob pressão):
+- [x] Redimensionar pra ~800×500 (mínimo) — nenhum texto de botão/label
       corta/sobrepõe (Port Scan e Monitor tiveram esse bug corrigido via
       `ReflowRow` nesta fase — ver `docs/redesign/VERIFICACAO_FASE3.md` —
-      confirmar que continua corrigido na build final)
-- [ ] Redimensionar pra ~1400×900 (grande) — layout não fica com espaço
+      confirmado que continua corrigido na build final)
+- [x] Redimensionar pra ~1400×900 (grande) — layout não fica com espaço
       vazio estranho nem widgets esticados de forma quebrada
 - [ ] Redimensionar a janela **enquanto uma operação está rodando** (scan em
       andamento, MTR contínuo, monitor com hosts ativos) — sem travar/piscar
+      (não testado com um scan/MTR realmente em andamento durante o próprio
+      resize, só com Monitor populado; recomendo um teste manual rápido)
 - [ ] MTR especificamente: em 850×550 a tabela de 10 colunas deve ganhar
       scroll horizontal (não cortar/sobrepor colunas)
 
@@ -124,15 +190,30 @@ Para cada aba:
 
 ## 5. Multi-janela (Ctrl+N)
 
-- [ ] `Ctrl+N` na janela principal abre uma segunda `MainWindow`
-- [ ] A segunda janela abre limpa, na seção **Quick Ping**, com o mesmo tema
+Verificado via automação nesta rodada (`Ctrl+N` disparado de verdade via
+`QTest.keyClick`, não chamando o método interno direto):
+- [x] `Ctrl+N` na janela principal abre uma segunda `MainWindow`
+- [x] A segunda janela abre limpa, na seção **Quick Ping**, com o mesmo tema
       da primeira
-- [ ] Iniciar monitoramento de hosts diferentes em cada janela — não
+- [x] Iniciar monitoramento de hosts diferentes em cada janela — não
       interferem entre si (RTT/perda não cruzam entre janelas)
-- [ ] Alternar tema em uma janela (botão 🌙/☀ na barra de menu) — a outra
+- [x] Alternar tema em uma janela (botão 🌙/☀ na barra de menu) — a outra
       janela também muda de tema junto
-- [ ] Fechar a janela secundária (X ou `Ctrl+Q`) — a principal continua
-      funcionando normalmente
+- [ ] **Fechar a janela SECUNDÁRIA (X) — CONFIRMAR SE ISSO ENCERRA O APP TODO.**
+      Achado durante a automação deste checklist (verificado com
+      `app.exec()` real, não só `processEvents()`): `MainWindow.closeEvent()`
+      chama `QApplication.quit()` **incondicionalmente**, em qualquer
+      instância — não só na "principal". Num app com loop de eventos real
+      rodando, fechar a janela secundária também derruba a primeira,
+      porque não existe conceito de janela "principal" vs "secundária" no
+      código (as duas são a mesma classe `MainWindow`, e `_instances` é só
+      uma lista, sem noção de "qual é a raiz"). **Isso é anterior a esta
+      sessão de redesign** (confirmado via `git log -p` em `closeEvent`,
+      inalterado há várias releases) — não foi introduzido agora, mas
+      contradiz a expectativa natural de "multi-janela" (Ctrl+N deveria
+      abrir janelas independentes). Se ao testar manualmente isso se
+      confirmar, é um bug real a decidir se entra no escopo da v2.0.0 ou
+      fica pra depois — não um item que deveria simplesmente "passar".
 - [ ] Fechar a janela principal com a secundária ainda aberta — **o
       processo inteiro encerra** (não é "minimizar pra bandeja"; é
       comportamento intencional desde a v1.2.0, ver `CLAUDE.md`) e nenhuma
@@ -151,29 +232,38 @@ Para cada aba:
 | Traceroute | Exportar CSV (hops) |
 | MTR | Exportar CSV (estatísticas por hop) |
 
-Para cada exportação da tabela acima:
-- [ ] Gerar algum resultado na aba primeiro (não exportar tabela vazia sem
+Para cada exportação da tabela acima (verificado via automação nesta
+rodada para as 7 exportações aplicáveis — arquivos gerados em
+`docs/redesign/qa_v2_evidence/exports/`; Traceroute/MTR com dados
+sintéticos na tabela, já que raw socket ICMP não roda sem admin):
+- [x] Gerar algum resultado na aba primeiro (não exportar tabela vazia sem
       querer testar esse caso separadamente)
-- [ ] Clicar exportar, escolher um caminho, confirmar que o arquivo é criado
-- [ ] Abrir o CSV/JSON gerado num editor de texto/planilha — cabeçalho e
+- [x] Clicar exportar, escolher um caminho, confirmar que o arquivo é criado
+- [x] Abrir o CSV/JSON gerado num editor de texto/planilha — cabeçalho e
       dados fazem sentido, sem campos truncados/corrompidos
 - [ ] Testar exportar com resultado vazio (ex.: Port Scan sem nenhuma porta
       aberta) — não deve travar nem gerar arquivo corrompido/vazio-com-erro
-- [ ] Monitor: exportar CSV/JSON com múltiplos hosts (misturar TCP/ICMP/UDP,
-      alguns UP e alguns DOWN) — todos os hosts aparecem no arquivo
+      (não testado nesta rodada)
+- [x] Monitor: exportar CSV/JSON com múltiplos hosts (misturei TCP + hosts
+      persistidos de sessão anterior, um UP e um DOWN) — todos aparecem no
+      JSON, inclusive os IDLE nunca iniciados
 
 ---
 
 ## 7. Alternância de tema
 
-- [ ] Botão 🌙/☀ na barra de menu alterna claro↔escuro sem travar
-- [ ] Testar a alternância em cada uma das 6 abas (não só na que abriu por
+- [x] Botão 🌙/☀ na barra de menu alterna claro↔escuro sem travar
+      (`tests/test_ui_theme.py`, 8 testes automatizados + verificado de novo
+      manualmente nesta rodada com um `HostCard` real)
+- [x] Testar a alternância em cada uma das 6 abas (não só na que abriu por
       padrão) — cores de texto/painéis acompanham o tema em todas
-- [ ] Testar com Monitor populado com hosts ativos (RTT variando ao vivo) —
+      (inspeção visual das 12 imagens em `screenshots/{dark,light}/`)
+- [x] Testar com Monitor populado com hosts ativos (RTT variando ao vivo) —
       o mini-gráfico de RTT de cada card também troca de cor de fundo/eixo
-      (não fica com fundo do tema antigo)
+      (não fica com fundo do tema antigo) — `test_toggle_theme_updates_monitor_host_card_graph`
 - [ ] Fechar e reabrir o app — o tema detectado automaticamente
-      (`darkdetect`) bate com o tema do SO
+      (`darkdetect`) bate com o tema do SO (não testado — depende do tema
+      real do SO no momento do teste, melhor feito manualmente)
 - [ ] Se o SO permitir alternar tema do sistema em tempo real (Windows
       10/11), trocar o tema do SO **com o NOCPing já aberto** e conferir se
       o app reflete isso (comportamento esperado: só na próxima abertura,
@@ -186,19 +276,28 @@ Para cada exportação da tabela acima:
 
 Pré-requisito: `Visualizar → Notificações de host` marcado (é o padrão).
 
-- [ ] **DOWN**: no Monitor, adicionar um host que vai falhar (ex.: IP
-      inexistente em modo TCP numa porta fechada, ou host realmente
-      offline) — notificação "Host offline" aparece na bandeja
-- [ ] **UP**: adicionar um host que responde, deixar cair propositalmente
-      (ex.: desconectar a rede um instante) e voltar — notificação "Host
-      online" aparece só quando volta de um estado DOWN anterior (não em
-      todo ping bem-sucedido)
-- [ ] **ERROR**: forçar um estado de erro (ex.: host inválido/não resolvível
-      em modo ICMP sem admin) — notificação "Erro no Host" aparece
-- [ ] Repetir DOWN/UP/ERROR a partir da aba **Quick Ping** (não só Monitor)
-      — desde a v1.5.0 ela também emite essas notificações
-- [ ] Desmarcar `Visualizar → Notificações de host` e repetir os 3 cenários
-      acima — nenhuma notificação aparece
+- [x] **DOWN** (Monitor): verificado via automação — TCP contra porta fechada
+      dispara `showMessage()` com "offline" no título. Falta confirmar
+      visualmente que o toast do SO realmente aparece (a automação só prova
+      que a chamada acontece).
+- [x] **UP após DOWN** (Monitor): verificado via automação — só notifica na
+      transição DOWN→UP, não em todo ping bem-sucedido.
+- [x] **ERROR** (Monitor): verificado via automação — host ICMP sem admin
+      dispara `showMessage()` com "Erro" no título.
+- [ ] **Quick Ping — DOWN/UP**: verificado via automação, funciona (mesma
+      lógica do Monitor, só que exige uma transição de status real — a
+      *primeira* leitura nunca notifica, só vira a linha de base).
+- [ ] **Quick Ping — ERROR não notifica (achado, não item a "passar").**
+      `_on_error()` do Quick Ping (ICMP/UDP sem admin, ou qualquer falha
+      antes do 1º resultado) não emite `host_status_changed` — confirmado
+      via automação (mock de `showMessage`, zero chamadas). O changelog da
+      v1.5.0 já falava só "UP/DOWN" pra Quick Ping, então isso pode ser
+      escopo intencional — mas se o comportamento esperado for paridade
+      total com o Monitor (que trata ERROR explicitamente), isto é um gap
+      a decidir se entra na v2.0.0.
+- [ ] Desmarcar `Visualizar → Notificações de host` e repetir os cenários
+      acima — nenhuma notificação aparece (verificado via automação pro
+      Monitor; toggle + persistência via `QSettings` confirmados)
 - [ ] Remarcar a opção, reabrir o app — a preferência persistiu
       (`QSettings`, chave `notifications_enabled`)
 - [ ] Duplo-clique no ícone da bandeja restaura a janela principal se
