@@ -379,5 +379,5 @@ https://github.com/heitortpf/nocping
 - Ícone da aplicação no macOS como `.icns` nativo (atualmente convertido pelo Pillow no build)
 - Empacotamento com instalador (NSIS no Windows, .deb no Linux, .dmg no macOS)
 - Mais probes UDP: porta 67 DHCP broadcast (atualmente envia unicast), 5353 multicast real (atualmente envia unicast para o host)
-- Notificação de bandeja também para hosts em ERRO (atualmente só UP/DOWN)
 - Gráfico do `HistoryDialog` com eixo X em timestamp legível (atualmente índice sequencial)
+- **Validar manualmente Windows com admin, Linux com root e macOS/Gatekeeper na v2.0.0** (build já publicado; UI não toca em `core/network.py`, risco baixo, mas fica pendente confirmar) — ver `docs/QA_CHECKLIST_v2.md` (Seções 1.1, 2, 3), que documenta exatamente o que não foi verificado nesta sessão e a justificativa de risco pra taguear mesmo assim.
