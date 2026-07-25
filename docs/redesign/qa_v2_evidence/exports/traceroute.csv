@@ -1,0 +1,3 @@
+Hop,IP,Hostname,RTT,Notas
+1,192.168.0.1,roteador.local,1.2 ms,
+2,8.8.8.8,dns.google,12.4 ms,destino

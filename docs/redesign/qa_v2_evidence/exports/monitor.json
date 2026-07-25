@@ -1,0 +1,196 @@
+[
+  {
+    "host": "1.1.1.1",
+    "mode": "UDP",
+    "status": "IDLE",
+    "results": []
+  },
+  {
+    "host": "8.8.8.8",
+    "mode": "ICMP",
+    "status": "IDLE",
+    "results": []
+  },
+  {
+    "host": "127.0.0.1",
+    "mode": "TCP",
+    "status": "UP",
+    "results": [
+      {
+        "seq": 1,
+        "success": true,
+        "elapsed_ms": 11.244199995417148,
+        "note": ""
+      },
+      {
+        "seq": 2,
+        "success": true,
+        "elapsed_ms": 0.6018000131007284,
+        "note": ""
+      },
+      {
+        "seq": 3,
+        "success": true,
+        "elapsed_ms": 0.8131999929901212,
+        "note": ""
+      },
+      {
+        "seq": 4,
+        "success": true,
+        "elapsed_ms": 15.4235000081826,
+        "note": ""
+      },
+      {
+        "seq": 5,
+        "success": true,
+        "elapsed_ms": 15.677199990022928,
+        "note": ""
+      },
+      {
+        "seq": 6,
+        "success": true,
+        "elapsed_ms": 15.187399985734373,
+        "note": ""
+      },
+      {
+        "seq": 7,
+        "success": true,
+        "elapsed_ms": 15.308500005630776,
+        "note": ""
+      },
+      {
+        "seq": 8,
+        "success": true,
+        "elapsed_ms": 0.3559000033419579,
+        "note": ""
+      },
+      {
+        "seq": 9,
+        "success": true,
+        "elapsed_ms": 16.040399990743026,
+        "note": ""
+      },
+      {
+        "seq": 10,
+        "success": true,
+        "elapsed_ms": 15.033700008643791,
+        "note": ""
+      },
+      {
+        "seq": 11,
+        "success": true,
+        "elapsed_ms": 0.21219998598098755,
+        "note": ""
+      },
+      {
+        "seq": 12,
+        "success": true,
+        "elapsed_ms": 16.06490000267513,
+        "note": ""
+      },
+      {
+        "seq": 13,
+        "success": true,
+        "elapsed_ms": 15.800099994521588,
+        "note": ""
+      },
+      {
+        "seq": 14,
+        "success": true,
+        "elapsed_ms": 0.4698999982792884,
+        "note": ""
+      },
+      {
+        "seq": 15,
+        "success": true,
+        "elapsed_ms": 14.814299996942282,
+        "note": ""
+      },
+      {
+        "seq": 16,
+        "success": true,
+        "elapsed_ms": 15.246399998432025,
+        "note": ""
+      },
+      {
+        "seq": 17,
+        "success": true,
+        "elapsed_ms": 0.8242000185418874,
+        "note": ""
+      },
+      {
+        "seq": 18,
+        "success": true,
+        "elapsed_ms": 15.859500010265037,
+        "note": ""
+      },
+      {
+        "seq": 19,
+        "success": true,
+        "elapsed_ms": 0.7436000159941614,
+        "note": ""
+      },
+      {
+        "seq": 20,
+        "success": true,
+        "elapsed_ms": 15.981600008672103,
+        "note": ""
+      },
+      {
+        "seq": 21,
+        "success": true,
+        "elapsed_ms": 15.185500000370666,
+        "note": ""
+      },
+      {
+        "seq": 22,
+        "success": true,
+        "elapsed_ms": 0.8919000101741403,
+        "note": ""
+      },
+      {
+        "seq": 23,
+        "success": true,
+        "elapsed_ms": 15.338800003519282,
+        "note": ""
+      },
+      {
+        "seq": 24,
+        "success": true,
+        "elapsed_ms": 15.598500001942739,
+        "note": ""
+      },
+      {
+        "seq": 25,
+        "success": true,
+        "elapsed_ms": 1.040700008161366,
+        "note": ""
+      },
+      {
+        "seq": 26,
+        "success": true,
+        "elapsed_ms": 16.10380000784062,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "host": "127.0.0.1",
+    "mode": "TCP",
+    "status": "DOWN",
+    "results": [
+      {
+        "seq": 1,
+        "success": false,
+        "elapsed_ms": 2004.4645000016317,
+        "note": "erro(10035)"
+      },
+      {
+        "seq": 2,
+        "success": false,
+        "elapsed_ms": 2001.5482000017073,
+        "note": "erro(10035)"
+      }
+    ]
+  }
+]
