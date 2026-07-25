@@ -97,6 +97,13 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
   (110 testes automatizados no total, era 77 na v1.5.0). CI
   (`.github/workflows/build.yml`) agora roda a suíte completa como gate
   antes de compilar/publicar qualquer release.
+- **Fix: fechar uma janela secundária não derruba mais o app inteiro** —
+  `MainWindow.closeEvent()` chamava `QApplication.quit()` incondicionalmente
+  em qualquer janela; fechar uma janela aberta via `Ctrl+N` matava também a
+  principal e todos os hosts sendo monitorados nela. Bug preexistente
+  (anterior a esta sessão de redesign), encontrado no QA da v2.0.0. Agora
+  cada janela limpa só os próprios workers ao fechar, e o processo só
+  encerra de verdade quando a última janela fecha.
 - **Quick Ping agora notifica também em ERROR, alinhado ao Monitor** — antes
   só alertava na bandeja para transições UP/DOWN; um erro de configuração/
   privilégio (ex.: ICMP/UDP sem Administrador) ficava só no console da aba,
