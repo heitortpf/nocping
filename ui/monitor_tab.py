@@ -6,8 +6,8 @@ import csv
 import json
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLineEdit,
-    QSpinBox, QComboBox, QPushButton, QScrollArea,
+    QWidget, QVBoxLayout, QGridLayout, QLineEdit,
+    QSpinBox, QComboBox, QScrollArea,
     QLabel, QFrame, QLayout, QLayoutItem, QSizePolicy, QFileDialog,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QRect, QSize, QPoint, QTimer
@@ -15,7 +15,10 @@ from PyQt6.QtCore import Qt, pyqtSignal, QRect, QSize, QPoint, QTimer
 from core.models import ProbeConfig, ProbeMode, IPVersion, HostStatus
 from core.config_store import save_hosts, load_hosts
 from .widgets.host_card import HostCard
-from .widgets._utils import field_label as _lbl, PRIMARY_BTN_STYLE
+from .widgets._utils import field_label as _lbl
+from .theme.tokens import DARK, SPACING, RADIUS
+from .theme.components import card_frame, primary_button, secondary_button, danger_button
+from .widgets._reflow_row import ReflowRow
 
 
 class MonitorTab(QWidget):
@@ -29,26 +32,18 @@ class MonitorTab(QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
+        root.setContentsMargins(SPACING.lg, SPACING.lg, SPACING.lg, SPACING.lg)
         root.setSpacing(0)
 
-        # ── Painel de controles ─────────────────────────────────────────
-        panel = QFrame()
-        panel.setObjectName("CtrlPanel")
-        panel.setStyleSheet("""
-            #CtrlPanel {
-                background: palette(alternate-base);
-                border: 1px solid palette(mid);
-                border-radius: 8px;
-            }
-        """)
+        # ── Painel de controles (card único: adicionar host + ações globais) ──
+        panel = card_frame(RADIUS.md)
         panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(14, 10, 14, 10)
-        panel_layout.setSpacing(8)
+        panel_layout.setContentsMargins(SPACING.lg, SPACING.md, SPACING.lg, SPACING.md)
+        panel_layout.setSpacing(SPACING.sm)
 
         # Grid: linha 0 = rótulos, linha 1 = campos (mesmas colunas → alinhamento garantido)
         grid = QGridLayout()
-        grid.setHorizontalSpacing(8)
+        grid.setHorizontalSpacing(SPACING.sm)
         grid.setVerticalSpacing(2)
         grid.setColumnStretch(0, 1)   # host — expansível
         # colunas 1-4 têm largura fixa determinada pelos widgets
@@ -84,10 +79,9 @@ class MonitorTab(QWidget):
         self._cmb_ip.setFixedHeight(34)
         self._cmb_ip.setFixedWidth(80)
 
-        btn_add = QPushButton("＋  Adicionar Host")
+        btn_add = primary_button("Adicionar Host", icon="＋")
         btn_add.setFixedHeight(34)
         btn_add.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        btn_add.setStyleSheet(PRIMARY_BTN_STYLE)
         btn_add.clicked.connect(self._add_card)
 
         grid.addWidget(self._inp_host,  1, 0)
@@ -100,58 +94,39 @@ class MonitorTab(QWidget):
         # Divisor
         div = QFrame()
         div.setFrameShape(QFrame.Shape.HLine)
-        div.setStyleSheet("color:#313244;")
+        div.setStyleSheet("color:palette(mid);")
         panel_layout.addWidget(div)
 
-        # Linha 3 — ações globais
-        action_row = QHBoxLayout()
-        action_row.setSpacing(8)
+        # Linha 3 — ações globais. ReflowRow em vez de QHBoxLayout puro:
+        # mesmo sintoma do Port Scan em janelas estreitas (perto do mínimo
+        # 800x500) — "Limpar Todos" cortava pra "Limpar Todo". Ver
+        # docs/redesign/VERIFICACAO_FASE3.md.
+        lbl_global = _lbl("CONTROLES GLOBAIS")
 
-        lbl_global = QLabel("Controles globais:")
-        lbl_global.setStyleSheet("color:#6b7280; font-size:11px;")
-        action_row.addWidget(lbl_global)
-        action_row.addSpacing(4)
-
+        left_widgets = [lbl_global, 4]
         for text, slot, danger in [
-            ("▶  Iniciar Todos", self._start_all, False),
-            ("⏹  Parar Todos",  self._stop_all,  False),
-            ("🗑  Limpar Todos", self._clear_all, True),
+            ("Iniciar Todos", self._start_all, False),
+            ("Parar Todos",  self._stop_all,  False),
+            ("Limpar Todos", self._clear_all, True),
         ]:
-            btn = QPushButton(text)
+            icon = {"Iniciar Todos": "▶", "Parar Todos": "⏹", "Limpar Todos": "🗑"}[text]
+            btn = danger_button(text, icon=icon) if danger else secondary_button(text, icon=icon)
             btn.setFixedHeight(28)
-            if danger:
-                btn.setStyleSheet(
-                    "QPushButton{background:#dc2626;color:#fff;border-radius:5px;"
-                    "font-size:12px;border:none;padding:0 12px;}"
-                    "QPushButton:hover{background:#b91c1c;}"
-                )
-            else:
-                btn.setStyleSheet(
-                    "QPushButton{background:palette(button);color:palette(button-text);"
-                    "border-radius:5px;font-size:12px;border:none;padding:0 12px;}"
-                    "QPushButton:hover{background:palette(mid);}"
-                )
             btn.clicked.connect(slot)
-            action_row.addWidget(btn)
+            left_widgets.append(btn)
 
-        action_row.addStretch()
-
-        _sec_style = (
-            "QPushButton{background:palette(button);color:palette(button-text);"
-            "border-radius:5px;font-size:12px;border:none;padding:0 10px;}"
-            "QPushButton:hover{background:palette(mid);}"
-        )
-        for text, slot in [("💾 CSV", self._export_csv), ("{ } JSON", self._export_json)]:
-            btn_exp = QPushButton(text)
+        right_widgets = []
+        for text, icon, slot in [("CSV", "💾", self._export_csv), ("JSON", "{ }", self._export_json)]:
+            btn_exp = secondary_button(text, icon=icon)
             btn_exp.setFixedHeight(28)
-            btn_exp.setStyleSheet(_sec_style)
             btn_exp.clicked.connect(slot)
-            action_row.addWidget(btn_exp)
+            right_widgets.append(btn_exp)
 
-        panel_layout.addLayout(action_row)
+        action_row = ReflowRow(left=left_widgets, right=right_widgets, spacing=SPACING.sm)
+        panel_layout.addWidget(action_row)
 
         root.addWidget(panel)
-        root.addSpacing(12)
+        root.addSpacing(SPACING.md)
 
         # ── Área de cards ───────────────────────────────────────────────
         scroll = QScrollArea()
@@ -172,7 +147,7 @@ class MonitorTab(QWidget):
         )
         self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._placeholder.setStyleSheet(
-            "color:#45475a; font-size:14px; line-height:1.8;"
+            f"color:{DARK.border}; font-size:14px; line-height:1.8;"
         )
         root.addWidget(self._placeholder)
 

@@ -1,20 +1,33 @@
 """
 NOCPing — ui/mtr_tab.py
 Aba MTR (My TraceRoute): traceroute contínuo com estatísticas por hop.
+
+Redesenhada para usar o design system (ui/theme/): card de controle mais
+compacto (Host/Versão IP sempre visíveis; Max Hops/Timeout/Intervalo viram
+uma seção "Avançado" colapsável, escondida por padrão), aviso de privilégio
+insuficiente reaproveitado de traceroute_tab.py, e cores da tabela por token.
+MTRWorker e a lógica de hop_discovered/hop_update não foram alterados — só
+a camada visual.
 """
 import csv
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLineEdit, QSpinBox,
-    QComboBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QLabel, QHeaderView, QFrame, QFileDialog,
+    QComboBox, QTableWidget, QTableWidgetItem,
+    QLabel, QHeaderView, QFileDialog,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QColor, QFont, QPalette
 
 from core.models import IPVersion
+from core.network import is_admin
 from core.workers import MTRWorker
-from .widgets._utils import field_label as _lbl, rtt_color as _rtt_color, PRIMARY_BTN_STYLE, TABLE_STYLE
+from .widgets._utils import field_label as _lbl, rtt_color as _rtt_color, TABLE_STYLE
+from .widgets._worker_tab import WorkerTabMixin
+from .theme.tokens import DARK, SPACING, RADIUS
+from .theme.components import (
+    card_frame, primary_button, secondary_button, admin_warning, toggle_link_button,
+)
 
 _COL_HOP      = 0
 _COL_IP       = 1
@@ -29,17 +42,19 @@ _COL_STDEV    = 9
 
 
 def _loss_color(pct: float) -> str:
-    if pct == 0:
-        return "#4ade80"
+    # Consolidado para os 3 tokens de status do design system (antes eram 4
+    # tons distintos: verde/lima/amarelo/vermelho — lima e verde viraram o
+    # mesmo `success`, ver relatório da tarefa).
     if pct < 5:
-        return "#a3e635"
+        return DARK.success
     if pct < 20:
-        return "#facc15"
-    return "#f87171"
+        return DARK.warning
+    return DARK.danger
 
 
-class MTRTab(QWidget):
+class MTRTab(WorkerTabMixin, QWidget):
     mtr_finished = pyqtSignal(str, int)
+    _WORKER_WAIT_GUARDED = False
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -50,33 +65,22 @@ class MTRTab(QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
-        root.setSpacing(0)
+        root.setContentsMargins(SPACING.lg, SPACING.lg, SPACING.lg, SPACING.lg)
+        root.setSpacing(SPACING.md)
 
-        # ── Painel de controles ─────────────────────────────────────────
-        panel = QFrame()
-        panel.setObjectName("MTRCtrlPanel")
-        panel.setStyleSheet("""
-            #MTRCtrlPanel {
-                background: palette(alternate-base);
-                border: 1px solid palette(mid);
-                border-radius: 8px;
-            }
-        """)
+        # ── Card de controle (compacto: Host + Versão IP sempre visíveis) ──
+        panel = card_frame(RADIUS.md)
         pl = QVBoxLayout(panel)
-        pl.setContentsMargins(14, 10, 14, 10)
-        pl.setSpacing(8)
+        pl.setContentsMargins(SPACING.lg, SPACING.md, SPACING.lg, SPACING.md)
+        pl.setSpacing(SPACING.sm)
 
         grid = QGridLayout()
-        grid.setHorizontalSpacing(8)
+        grid.setHorizontalSpacing(SPACING.sm)
         grid.setVerticalSpacing(2)
         grid.setColumnStretch(0, 1)
 
-        grid.addWidget(_lbl("HOST / IP"),    0, 0)
-        grid.addWidget(_lbl("VERSÃO IP"),    0, 1)
-        grid.addWidget(_lbl("MAX HOPS"),     0, 2)
-        grid.addWidget(_lbl("TIMEOUT"),      0, 3)
-        grid.addWidget(_lbl("INTERVALO"),    0, 4)
+        grid.addWidget(_lbl("HOST / IP"), 0, 0)
+        grid.addWidget(_lbl("VERSÃO IP"), 0, 1)
 
         self._inp_host = QLineEdit()
         self._inp_host.setPlaceholderText("ex: 8.8.8.8 ou google.com")
@@ -89,6 +93,41 @@ class MTRTab(QWidget):
             self._cmb_ip.addItem(v.value, v)
         self._cmb_ip.setFixedHeight(34)
         self._cmb_ip.setFixedWidth(80)
+
+        self._btn_start = primary_button("Iniciar MTR", icon="▶")
+        self._btn_start.setFixedHeight(34)
+        self._btn_start.clicked.connect(self._start)
+
+        self._btn_stop = secondary_button("Parar", icon="⏹")
+        self._btn_stop.setFixedHeight(34)
+        self._btn_stop.setEnabled(False)
+        self._btn_stop.clicked.connect(self._stop)
+
+        grid.addWidget(self._inp_host, 1, 0)
+        grid.addWidget(self._cmb_ip,   1, 1)
+        grid.addWidget(self._btn_start, 1, 2)
+        grid.addWidget(self._btn_stop,  1, 3)
+        pl.addLayout(grid)
+
+        if not is_admin():
+            pl.addWidget(admin_warning(
+                "Sem privilégios de Administrador — MTR (raw socket ICMP) não vai funcionar."
+            ))
+
+        # ── Seção "Avançado" colapsável: Max Hops / Timeout / Intervalo ──
+        self._btn_advanced = toggle_link_button("▸  Avançado (max hops, timeout, intervalo)")
+        self._btn_advanced.toggled.connect(self._toggle_advanced)
+        pl.addWidget(self._btn_advanced)
+
+        self._advanced = QWidget()
+        adv_grid = QGridLayout(self._advanced)
+        adv_grid.setContentsMargins(0, SPACING.xs, 0, 0)
+        adv_grid.setHorizontalSpacing(SPACING.sm)
+        adv_grid.setVerticalSpacing(2)
+
+        adv_grid.addWidget(_lbl("MAX HOPS"),  0, 0)
+        adv_grid.addWidget(_lbl("TIMEOUT"),   0, 1)
+        adv_grid.addWidget(_lbl("INTERVALO"), 0, 2)
 
         self._spn_hops = QSpinBox()
         self._spn_hops.setRange(1, 64)
@@ -110,60 +149,34 @@ class MTRTab(QWidget):
         self._spn_interval.setFixedHeight(34)
         self._spn_interval.setFixedWidth(110)
 
-        self._btn_start = QPushButton("▶  Iniciar MTR")
-        self._btn_start.setFixedHeight(34)
-        self._btn_start.setStyleSheet(PRIMARY_BTN_STYLE)
-        self._btn_start.clicked.connect(self._start)
+        adv_grid.addWidget(self._spn_hops,     1, 0)
+        adv_grid.addWidget(self._spn_timeout,  1, 1)
+        adv_grid.addWidget(self._spn_interval, 1, 2)
+        adv_grid.setColumnStretch(3, 1)
 
-        self._btn_stop = QPushButton("⏹  Parar")
-        self._btn_stop.setFixedHeight(34)
-        self._btn_stop.setEnabled(False)
-        self._btn_stop.setStyleSheet(
-            "QPushButton{background:palette(button);color:palette(button-text);"
-            "border-radius:6px;font-size:13px;border:none;padding:0 14px;}"
-            "QPushButton:hover{background:palette(mid);}"
-            "QPushButton:disabled{color:palette(placeholder-text);}"
-        )
-        self._btn_stop.clicked.connect(self._stop)
-
-        grid.addWidget(self._inp_host,     1, 0)
-        grid.addWidget(self._cmb_ip,       1, 1)
-        grid.addWidget(self._spn_hops,     1, 2)
-        grid.addWidget(self._spn_timeout,  1, 3)
-        grid.addWidget(self._spn_interval, 1, 4)
-        grid.addWidget(self._btn_start,    1, 5)
-        grid.addWidget(self._btn_stop,     1, 6)
-        pl.addLayout(grid)
+        self._advanced.setVisible(False)
+        pl.addWidget(self._advanced)
 
         root.addWidget(panel)
-        root.addSpacing(8)
 
         # ── Status + ações ──────────────────────────────────────────────
         self._lbl_status = QLabel("Digite um host e clique em Iniciar MTR.")
-        self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; padding:2px 0;")
+        self._lbl_status.setStyleSheet(f"color:{DARK.text_muted}; font-size:12px; padding:2px 0;")
 
-        _sec = (
-            "QPushButton{background:palette(button);color:palette(button-text);"
-            "border-radius:5px;font-size:12px;border:none;padding:0 10px;}"
-            "QPushButton:hover{background:palette(mid);}"
-            "QPushButton:disabled{color:palette(placeholder-text);}"
-        )
-        self._btn_clear = QPushButton("🗑  Limpar")
+        self._btn_clear = secondary_button("Limpar", icon="🗑")
         self._btn_clear.setFixedHeight(26)
-        self._btn_clear.setStyleSheet(_sec)
         self._btn_clear.clicked.connect(self._clear)
 
-        self._btn_export = QPushButton("💾  Exportar CSV")
+        self._btn_export = secondary_button("Exportar CSV", icon="💾")
         self._btn_export.setFixedHeight(26)
-        self._btn_export.setStyleSheet(_sec)
         self._btn_export.clicked.connect(self._export_csv)
 
         status_row = QHBoxLayout()
+        status_row.setSpacing(SPACING.sm)
         status_row.addWidget(self._lbl_status, 1)
         status_row.addWidget(self._btn_clear)
         status_row.addWidget(self._btn_export)
         root.addLayout(status_row)
-        root.addSpacing(4)
 
         # ── Tabela ──────────────────────────────────────────────────────
         headers = ["Hop", "IP", "Hostname", "Loss%", "Sent",
@@ -196,30 +209,38 @@ class MTRTab(QWidget):
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.verticalHeader().setVisible(False)
+        self._table.setAlternatingRowColors(True)
+        # Fonte monoespaçada em toda a tabela — colunas numéricas (Loss%...
+        # StDev) já ficam alinhadas à direita em _set_cell(), então os
+        # dígitos formam colunas retas (tipografia tabular "de fato" via
+        # fonte monoespaçada, já que Consolas não tem variante "tabular
+        # figures" separada — mono já garante isso).
         mono = QFont("Consolas, Courier New, monospace")
         mono.setPointSize(11)
         self._table.setFont(mono)
         self._table.setStyleSheet(
-            TABLE_STYLE + "QTableWidget::item { padding:2px 4px; }"
+            TABLE_STYLE +
+            "QTableWidget::item { padding:2px 4px; }"
+            "QTableWidget { alternate-background-color:palette(alternate-base); }"
         )
         root.addWidget(self._table, 1)
 
     # ------------------------------------------------------------------
 
-    def _cleanup_worker(self):
-        if self._worker is None:
-            return
-        try:
-            self._worker.hop_discovered.disconnect(self._on_hop_discovered)
-            self._worker.hop_update.disconnect(self._on_hop_update)
-            self._worker.error.disconnect(self._on_error)
-            self._worker.finished.disconnect(self._on_finished)
-        except RuntimeError:
-            pass
-        self._worker.stop()
-        self._worker.wait(2000)
-        self._worker.deleteLater()
-        self._worker = None
+    def _toggle_advanced(self, checked: bool):
+        self._advanced.setVisible(checked)
+        self._btn_advanced.setText(
+            "▾  Avançado (max hops, timeout, intervalo)" if checked
+            else "▸  Avançado (max hops, timeout, intervalo)"
+        )
+
+    def _worker_signal_pairs(self):
+        return [
+            ("hop_discovered", "_on_hop_discovered"),
+            ("hop_update",     "_on_hop_update"),
+            ("error",          "_on_error"),
+            ("finished",       "_on_finished"),
+        ]
 
     def _start(self):
         host = self._inp_host.text().strip()
@@ -232,7 +253,7 @@ class MTRTab(QWidget):
         self._row_map.clear()
         self._manually_stopped = False
         self._lbl_status.setText(f"Rastreando MTR para  {host}…")
-        self._lbl_status.setStyleSheet("color:#a78bfa; font-size:12px; padding:2px 0;")
+        self._lbl_status.setStyleSheet(f"color:{DARK.info}; font-size:12px; padding:2px 0;")
         self._btn_start.setEnabled(False)
         self._btn_stop.setEnabled(True)
         self._btn_clear.setEnabled(False)
@@ -260,23 +281,23 @@ class MTRTab(QWidget):
         self._btn_clear.setEnabled(True)
         self._btn_export.setEnabled(self._table.rowCount() > 0)
         self._lbl_status.setText("MTR interrompido.")
-        self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; padding:2px 0;")
+        self._lbl_status.setStyleSheet(f"color:{DARK.text_muted}; font-size:12px; padding:2px 0;")
 
     def _on_hop_discovered(self, ttl: int, ip: str, hostname: str):
         if ttl in self._row_map:
             row = self._row_map[ttl]
-            self._set_cell(row, _COL_IP,       ip or "* * *", "#6b7280" if not ip else "#cdd6f4")
-            self._set_cell(row, _COL_HOSTNAME, hostname or "—", "#9ca3af")
+            self._set_cell(row, _COL_IP,       ip or "* * *", DARK.text_muted if not ip else None)
+            self._set_cell(row, _COL_HOSTNAME, hostname or "—", DARK.text_muted)
             return
         row = self._table.rowCount()
         self._table.insertRow(row)
         self._row_map[ttl] = row
-        self._set_cell(row, _COL_HOP,      str(ttl),       "#6b7280")
-        self._set_cell(row, _COL_IP,       ip or "* * *",  "#6b7280" if not ip else "#cdd6f4")
-        self._set_cell(row, _COL_HOSTNAME, hostname or "—","#9ca3af")
+        self._set_cell(row, _COL_HOP,      str(ttl),       DARK.text_muted)
+        self._set_cell(row, _COL_IP,       ip or "* * *",  DARK.text_muted if not ip else None)
+        self._set_cell(row, _COL_HOSTNAME, hostname or "—", DARK.text_muted)
         for col in (_COL_LOSS, _COL_SENT, _COL_LAST, _COL_AVG,
                     _COL_BEST, _COL_WORST, _COL_STDEV):
-            self._set_cell(row, col, "—", "#6b7280")
+            self._set_cell(row, col, "—", DARK.text_muted)
 
     def _on_hop_update(self, ttl: int, stats: dict):
         row = self._row_map.get(ttl)
@@ -284,12 +305,12 @@ class MTRTab(QWidget):
             return
         loss = stats["loss_pct"]
         self._set_cell(row, _COL_LOSS,  f"{loss:.1f}%",              _loss_color(loss))
-        self._set_cell(row, _COL_SENT,  str(stats["sent"]),           "#9ca3af")
+        self._set_cell(row, _COL_SENT,  str(stats["sent"]),           DARK.text_muted)
         self._set_cell(row, _COL_LAST,  self._fmt(stats["last_ms"]),  _rtt_color(stats["last_ms"]))
         self._set_cell(row, _COL_AVG,   self._fmt(stats["avg_ms"]),   _rtt_color(stats["avg_ms"]))
-        self._set_cell(row, _COL_BEST,  self._fmt(stats["best_ms"]),  "#4ade80")
+        self._set_cell(row, _COL_BEST,  self._fmt(stats["best_ms"]),  DARK.success)
         self._set_cell(row, _COL_WORST, self._fmt(stats["worst_ms"]), _rtt_color(stats["worst_ms"]))
-        self._set_cell(row, _COL_STDEV, self._fmt(stats["stdev_ms"]), "#9ca3af")
+        self._set_cell(row, _COL_STDEV, self._fmt(stats["stdev_ms"]), DARK.text_muted)
 
         hops = self._table.rowCount()
         sent = stats["sent"]
@@ -299,7 +320,7 @@ class MTRTab(QWidget):
 
     def _on_error(self, msg: str):
         self._lbl_status.setText(f"Erro: {msg}")
-        self._lbl_status.setStyleSheet("color:#f87171; font-size:12px; padding:2px 0;")
+        self._lbl_status.setStyleSheet(f"color:{DARK.danger}; font-size:12px; padding:2px 0;")
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
         self._btn_clear.setEnabled(True)
@@ -307,12 +328,12 @@ class MTRTab(QWidget):
 
     def _on_finished(self):
         self._lbl_status.setText("MTR concluído.")
-        self._lbl_status.setStyleSheet("color:#4ade80; font-size:12px; padding:2px 0;")
+        self._lbl_status.setStyleSheet(f"color:{DARK.success}; font-size:12px; padding:2px 0;")
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
         self._btn_clear.setEnabled(True)
         self._btn_export.setEnabled(self._table.rowCount() > 0)
-        
+
         if not self._manually_stopped:
             host = self._inp_host.text().strip()
             self.mtr_finished.emit(host, self._table.rowCount())
@@ -322,7 +343,7 @@ class MTRTab(QWidget):
         self._row_map.clear()
         self._btn_export.setEnabled(False)
         self._lbl_status.setText("Digite um host e clique em Iniciar MTR.")
-        self._lbl_status.setStyleSheet("color:#6b7280; font-size:12px; padding:2px 0;")
+        self._lbl_status.setStyleSheet(f"color:{DARK.text_muted}; font-size:12px; padding:2px 0;")
 
     def _export_csv(self):
         if self._table.rowCount() == 0:
@@ -348,7 +369,7 @@ class MTRTab(QWidget):
     def _fmt(ms: float) -> str:
         return f"{ms:.1f} ms" if ms > 0 else "—"
 
-    def _set_cell(self, row: int, col: int, text: str, color: str):
+    def _set_cell(self, row: int, col: int, text: str, color: str | None):
         item = self._table.item(row, col)
         if item is None:
             item = QTableWidgetItem(text)
@@ -360,4 +381,13 @@ class MTRTab(QWidget):
             self._table.setItem(row, col, item)
         else:
             item.setText(text)
-        item.setForeground(QColor(color))
+        # color=None = cor padrão da tabela (palette(text)). Resolvida aqui
+        # (não só "pular o setForeground") porque esta célula pode ser
+        # reescrita depois com uma cor diferente (ex.: IP muda de "sem
+        # resposta ainda" cinza para um IP real com cor padrão) — só pular
+        # deixaria a cor antiga grudada no item.
+        color_obj = (
+            QColor(color) if color is not None
+            else self._table.palette().color(QPalette.ColorRole.Text)
+        )
+        item.setForeground(color_obj)

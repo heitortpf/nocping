@@ -5,9 +5,9 @@ Janela principal com abas, menu e barra de status.
 import base64
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QTabWidget, QWidget,
+    QMainWindow, QStackedWidget, QWidget, QHBoxLayout,
     QLabel, QMessageBox, QPushButton, QApplication, QFileDialog,
-    QSystemTrayIcon, QMenu,
+    QSystemTrayIcon,
 )
 from PyQt6.QtCore import QSettings, QByteArray, QBuffer, QIODevice
 from PyQt6.QtCore import Qt, QPointF
@@ -15,42 +15,34 @@ from PyQt6.QtGui import QAction, QPalette, QColor, QPainter, QPixmap, QPolygonF
 
 from .monitor_tab import MonitorTab
 from .quick_ping_tab import QuickPingTab
+from .theme.tokens import DARK, LIGHT, ColorTokens
+from .theme.components import count_badge
+from .widgets.tray import SystemTray
+from .widgets.sidebar import NavSidebar
 from core.network import is_admin
 
 
-DARK_PALETTE = {
-    QPalette.ColorRole.Window:          "#11111b",
-    QPalette.ColorRole.WindowText:      "#cdd6f4",
-    QPalette.ColorRole.Base:            "#181825",
-    QPalette.ColorRole.AlternateBase:   "#1e1e2e",
-    QPalette.ColorRole.Text:            "#cdd6f4",
-    QPalette.ColorRole.Button:          "#313244",
-    QPalette.ColorRole.ButtonText:      "#cdd6f4",
-    QPalette.ColorRole.Mid:             "#45475a",
-    QPalette.ColorRole.Highlight:       "#7c3aed",
-    QPalette.ColorRole.HighlightedText: "#ffffff",
-    QPalette.ColorRole.ToolTipBase:     "#313244",
-    QPalette.ColorRole.ToolTipText:     "#cdd6f4",
-    QPalette.ColorRole.PlaceholderText: "#6b7280",
-    QPalette.ColorRole.Link:            "#89b4fa",
-}
+def _palette_dict(t: ColorTokens) -> dict:
+    return {
+        QPalette.ColorRole.Window:          t.bg,
+        QPalette.ColorRole.WindowText:      t.text_primary,
+        QPalette.ColorRole.Base:            t.surface,
+        QPalette.ColorRole.AlternateBase:   t.surface_elevated,
+        QPalette.ColorRole.Text:            t.text_primary,
+        QPalette.ColorRole.Button:          t.button_bg,
+        QPalette.ColorRole.ButtonText:      t.text_primary,
+        QPalette.ColorRole.Mid:             t.border,
+        QPalette.ColorRole.Highlight:       t.primary,
+        QPalette.ColorRole.HighlightedText: t.on_primary,
+        QPalette.ColorRole.ToolTipBase:     t.tooltip_bg,
+        QPalette.ColorRole.ToolTipText:     t.tooltip_fg,
+        QPalette.ColorRole.PlaceholderText: t.text_secondary,
+        QPalette.ColorRole.Link:            t.link,
+    }
 
-LIGHT_PALETTE = {
-    QPalette.ColorRole.Window:          "#eff1f5",
-    QPalette.ColorRole.WindowText:      "#4c4f69",
-    QPalette.ColorRole.Base:            "#ffffff",
-    QPalette.ColorRole.AlternateBase:   "#e6e9ef",
-    QPalette.ColorRole.Text:            "#4c4f69",
-    QPalette.ColorRole.Button:          "#dce0e8",
-    QPalette.ColorRole.ButtonText:      "#4c4f69",
-    QPalette.ColorRole.Mid:             "#bcc0cc",
-    QPalette.ColorRole.Highlight:       "#7c3aed",
-    QPalette.ColorRole.HighlightedText: "#ffffff",
-    QPalette.ColorRole.ToolTipBase:     "#dce0e8",
-    QPalette.ColorRole.ToolTipText:     "#4c4f69",
-    QPalette.ColorRole.PlaceholderText: "#9ca3af",
-    QPalette.ColorRole.Link:            "#1d4ed8",
-}
+
+DARK_PALETTE = _palette_dict(DARK)
+LIGHT_PALETTE = _palette_dict(LIGHT)
 
 _arrow_cache: dict[str, str] = {}
 
@@ -60,7 +52,7 @@ def _arrow_url(direction: str, dark: bool) -> str:
     if key in _arrow_cache:
         return _arrow_cache[key]
 
-    color = QColor("#cdd6f4" if dark else "#4c4f69")
+    color = QColor((DARK if dark else LIGHT).text_primary)
     pts_up   = [QPointF(5, 2), QPointF(10, 9), QPointF(0, 9)]
     pts_down = [QPointF(0, 1), QPointF(10, 1), QPointF(5, 8)]
     pts = pts_up if direction == "up" else pts_down
@@ -87,88 +79,63 @@ def _arrow_url(direction: str, dark: bool) -> str:
 def _build_stylesheet(dark: bool) -> str:
     up   = _arrow_url("up",   dark)
     down = _arrow_url("down", dark)
-
-    if dark:
-        field_bg  = "#313244"; field_fg  = "#cdd6f4"
-        border    = "#45475a"; focus_border = "#7c3aed"
-        btn_bg    = "#45475a"; btn_hover = "#585b70"; btn_press = "#6c7086"
-        scroll_bg = "#1e1e2e"; scroll_h  = "#45475a"
-        tab_bg    = "#1e1e2e"; tab_fg    = "#9ca3af"; tab_fg_sel = "#cdd6f4"
-        pane_b    = "#313244"; splitter  = "#313244"
-        tip_fg    = "#cdd6f4"; tip_bg    = "#313244"
-        sel_bg    = "#7c3aed"
-    else:
-        field_bg  = "#ffffff"; field_fg  = "#4c4f69"
-        border    = "#bcc0cc"; focus_border = "#7c3aed"
-        btn_bg    = "#dce0e8"; btn_hover = "#c8ccd4"; btn_press = "#bcc0cc"
-        scroll_bg = "#e6e9ef"; scroll_h  = "#bcc0cc"
-        tab_bg    = "#e6e9ef"; tab_fg    = "#9ca3af"; tab_fg_sel = "#4c4f69"
-        pane_b    = "#bcc0cc"; splitter  = "#dce0e8"
-        tip_fg    = "#4c4f69"; tip_bg    = "#dce0e8"
-        sel_bg    = "#7c3aed"
+    t = DARK if dark else LIGHT
 
     return f"""
-    QToolTip {{ color:{tip_fg}; background:{tip_bg}; border:1px solid {border}; }}
-    QTabWidget::pane {{ border:1px solid {pane_b}; }}
-    QTabBar::tab {{
-        background:{tab_bg}; color:{tab_fg}; padding:6px 16px;
-        border-bottom:2px solid transparent;
-    }}
-    QTabBar::tab:selected {{ color:{tab_fg_sel}; border-bottom:2px solid #7c3aed; }}
-    QTabBar::tab:hover:!selected {{ color:{tab_fg_sel}; }}
+    QToolTip {{ color:{t.tooltip_fg}; background:{t.tooltip_bg}; border:1px solid {t.border}; }}
     QLineEdit, QComboBox {{
-        background:{field_bg}; color:{field_fg}; border:1px solid {border};
+        background:{t.field_bg}; color:{t.text_primary}; border:1px solid {t.border};
         border-radius:4px; padding:3px 6px;
-        selection-background-color:{sel_bg}; selection-color:#ffffff;
+        selection-background-color:{t.primary}; selection-color:{t.on_primary};
     }}
-    QLineEdit:focus, QComboBox:focus {{ border:1px solid {focus_border}; }}
+    QLineEdit:focus, QComboBox:focus {{ border:1px solid {t.primary}; }}
     QSpinBox {{
-        background:{field_bg}; color:{field_fg}; border:1px solid {border};
+        background:{t.field_bg}; color:{t.text_primary}; border:1px solid {t.border};
         border-radius:4px; padding:3px 6px;
-        selection-background-color:{sel_bg}; selection-color:#ffffff;
+        selection-background-color:{t.primary}; selection-color:{t.on_primary};
     }}
-    QSpinBox:focus {{ border:1px solid {focus_border}; }}
+    QSpinBox:focus {{ border:1px solid {t.primary}; }}
     QSpinBox::up-button {{
         subcontrol-origin: border; subcontrol-position: top right;
-        width:18px; background:{btn_bg};
-        border-left:1px solid {border}; border-top-right-radius:4px;
+        width:18px; background:{t.control_bg};
+        border-left:1px solid {t.border}; border-top-right-radius:4px;
     }}
-    QSpinBox::up-button:hover   {{ background:{btn_hover}; }}
-    QSpinBox::up-button:pressed {{ background:{btn_press}; }}
+    QSpinBox::up-button:hover   {{ background:{t.control_hover}; }}
+    QSpinBox::up-button:pressed {{ background:{t.control_press}; }}
     QSpinBox::down-button {{
         subcontrol-origin: border; subcontrol-position: bottom right;
-        width:18px; background:{btn_bg};
-        border-left:1px solid {border}; border-bottom-right-radius:4px;
+        width:18px; background:{t.control_bg};
+        border-left:1px solid {t.border}; border-bottom-right-radius:4px;
     }}
-    QSpinBox::down-button:hover   {{ background:{btn_hover}; }}
-    QSpinBox::down-button:pressed {{ background:{btn_press}; }}
+    QSpinBox::down-button:hover   {{ background:{t.control_hover}; }}
+    QSpinBox::down-button:pressed {{ background:{t.control_press}; }}
     QSpinBox::up-arrow   {{ image: url({up});   width:8px; height:8px; }}
     QSpinBox::down-arrow {{ image: url({down}); width:8px; height:8px; }}
-    QScrollBar:vertical {{ background:{scroll_bg}; width:8px; border-radius:4px; }}
-    QScrollBar::handle:vertical {{ background:{scroll_h}; border-radius:4px; min-height:20px; }}
+    QScrollBar:vertical {{ background:{t.surface_elevated}; width:8px; border-radius:4px; }}
+    QScrollBar::handle:vertical {{ background:{t.border}; border-radius:4px; min-height:20px; }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height:0; }}
-    QScrollBar:horizontal {{ background:{scroll_bg}; height:8px; border-radius:4px; }}
-    QScrollBar::handle:horizontal {{ background:{scroll_h}; border-radius:4px; }}
+    QScrollBar:horizontal {{ background:{t.surface_elevated}; height:8px; border-radius:4px; }}
+    QScrollBar::handle:horizontal {{ background:{t.border}; border-radius:4px; }}
     QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width:0; }}
-    QSplitter::handle {{ background:{splitter}; }}
+    QSplitter::handle {{ background:{t.button_bg}; }}
 """
 
 DARK_MENUBAR_STYLE = (
-    "QMenuBar{background:#11111b;color:#cdd6f4;}"
-    "QMenuBar::item:selected{background:#313244;}"
-    "QMenu{background:#1e1e2e;color:#cdd6f4;border:1px solid #313244;}"
-    "QMenu::item:selected{background:#313244;}"
+    f"QMenuBar{{background:{DARK.bg};color:{DARK.text_primary};}}"
+    f"QMenuBar::item:selected{{background:{DARK.button_bg};}}"
+    f"QMenu{{background:{DARK.surface_elevated};color:{DARK.text_primary};border:1px solid {DARK.button_bg};}}"
+    f"QMenu::item:selected{{background:{DARK.button_bg};}}"
 )
 
 LIGHT_MENUBAR_STYLE = (
-    "QMenuBar{background:#eff1f5;color:#4c4f69;}"
-    "QMenuBar::item:selected{background:#dce0e8;}"
-    "QMenu{background:#ffffff;color:#4c4f69;border:1px solid #bcc0cc;}"
-    "QMenu::item:selected{background:#e6e9ef;}"
+    f"QMenuBar{{background:{LIGHT.bg};color:{LIGHT.text_primary};}}"
+    f"QMenuBar::item:selected{{background:{LIGHT.button_bg};}}"
+    f"QMenu{{background:{LIGHT.surface};color:{LIGHT.text_primary};border:1px solid {LIGHT.border};}}"
+    f"QMenu::item:selected{{background:{LIGHT.surface_elevated};}}"
 )
 
-DARK_STATUSBAR_STYLE  = "QStatusBar{background:#11111b;color:#6b7280;font-size:11px;}"
-LIGHT_STATUSBAR_STYLE = "QStatusBar{background:#eff1f5;color:#6b7280;font-size:11px;}"
+DARK_STATUSBAR_STYLE  = f"QStatusBar{{background:{DARK.bg};color:{DARK.text_muted};font-size:11px;}}"
+LIGHT_STATUSBAR_STYLE = f"QStatusBar{{background:{LIGHT.bg};color:{LIGHT.text_muted};font-size:11px;}}"
 
 
 def detect_system_dark() -> bool:
@@ -196,6 +163,14 @@ def apply_theme(app, dark: bool) -> None:
 
 class MainWindow(QMainWindow):
     _instances: list["MainWindow"] = []
+
+    # Única fonte de verdade pra ordem/índice das seções — usado por
+    # show_section() e por quem mais precisar de navegação programática
+    # (ex.: take_shots.py). Se a navegação mudar de novo no futuro, só isto
+    # (e o _on_tab_activated correspondente) precisa mudar.
+    SECTIONS: tuple[str, ...] = (
+        "quick_ping", "monitor", "port_scan", "banner_tls", "traceroute", "mtr",
+    )
 
     def __init__(self):
         super().__init__()
@@ -261,8 +236,17 @@ class MainWindow(QMainWindow):
         menu.setCornerWidget(self._btn_theme)
 
     def _build_tabs(self):
-        self._tabs = QTabWidget()
-        self._tabs.setDocumentMode(True)
+        central = QWidget()
+        central_layout = QHBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+
+        self._sidebar = NavSidebar()
+        self._sidebar.page_changed.connect(self._on_tab_activated)
+        central_layout.addWidget(self._sidebar)
+
+        self._stack = QStackedWidget()
+        central_layout.addWidget(self._stack, 1)
 
         self._quick_ping = QuickPingTab()
         self._quick_ping.ping_finished.connect(self._on_quick_ping_finished)
@@ -276,63 +260,73 @@ class MainWindow(QMainWindow):
         self._mtr:        "MTRTab | None"        = None
         self._initialized_tabs: set[int] = {0, 1}
 
-        self._tabs.addTab(self._quick_ping, "⚡  Quick Ping")
-        self._tabs.addTab(self._monitor,    "⬤  Monitor")
-        self._tabs.addTab(QWidget(),        "🔍  Port Scan")
-        self._tabs.addTab(QWidget(),        "🔒  Banner / TLS")
-        self._tabs.addTab(QWidget(),        "📡  Traceroute")
-        self._tabs.addTab(QWidget(),        "📊  MTR")
-        self.setCentralWidget(self._tabs)
-        self._tabs.currentChanged.connect(self._on_tab_activated)
+        self._stack.addWidget(self._quick_ping)  # index 0
+        self._stack.addWidget(self._monitor)     # index 1
+        self._stack.addWidget(QWidget())         # index 2 — Port Scan (lazy)
+        self._stack.addWidget(QWidget())         # index 3 — Banner/TLS (lazy)
+        self._stack.addWidget(QWidget())         # index 4 — Traceroute (lazy)
+        self._stack.addWidget(QWidget())         # index 5 — MTR (lazy)
+
+        self.setCentralWidget(central)
+        self._sidebar.set_current(0)
+        self._stack.setCurrentIndex(0)
 
     def _on_tab_activated(self, index: int):
-        if index in self._initialized_tabs:
-            return
-        self._initialized_tabs.add(index)
+        if index not in self._initialized_tabs:
+            self._initialized_tabs.add(index)
 
-        if index == 2:
-            from .scan_tab import ScanTab
-            self._scan = ScanTab()
-            self._scan.scan_finished.connect(self._on_scan_finished)
-            widget, label = self._scan, "🔍  Port Scan"
-        elif index == 3:
-            from .banner_tab import BannerTab
-            self._banner = BannerTab()
-            self._banner.banner_finished.connect(self._on_banner_finished)
-            widget, label = self._banner, "🔒  Banner / TLS"
-        elif index == 4:
-            from .traceroute_tab import TracerouteTab
-            self._traceroute = TracerouteTab()
-            self._traceroute.traceroute_finished.connect(self._on_traceroute_finished)
-            widget, label = self._traceroute, "📡  Traceroute"
-        elif index == 5:
-            from .mtr_tab import MTRTab
-            self._mtr = MTRTab()
-            self._mtr.mtr_finished.connect(self._on_mtr_finished)
-            widget, label = self._mtr, "📊  MTR"
-        else:
-            return
+            widget = None
+            if index == 2:
+                from .scan_tab import ScanTab
+                self._scan = ScanTab()
+                self._scan.scan_finished.connect(self._on_scan_finished)
+                widget = self._scan
+            elif index == 3:
+                from .banner_tab import BannerTab
+                self._banner = BannerTab()
+                self._banner.banner_finished.connect(self._on_banner_finished)
+                widget = self._banner
+            elif index == 4:
+                from .traceroute_tab import TracerouteTab
+                self._traceroute = TracerouteTab()
+                self._traceroute.traceroute_finished.connect(self._on_traceroute_finished)
+                widget = self._traceroute
+            elif index == 5:
+                from .mtr_tab import MTRTab
+                self._mtr = MTRTab()
+                self._mtr.mtr_finished.connect(self._on_mtr_finished)
+                widget = self._mtr
 
-        self._tabs.currentChanged.disconnect(self._on_tab_activated)
-        self._tabs.removeTab(index)
-        self._tabs.insertTab(index, widget, label)
-        self._tabs.setCurrentIndex(index)
-        self._tabs.currentChanged.connect(self._on_tab_activated)
+            if widget is not None:
+                old = self._stack.widget(index)
+                self._stack.insertWidget(index, widget)
+                self._stack.removeWidget(old)
+                old.deleteLater()
+
+        self._stack.setCurrentIndex(index)
+
+    def show_section(self, name: str):
+        """Navega programaticamente para uma seção pelo nome (mesmo efeito de
+        clicar o item correspondente na sidebar, lazy-load incluso) — sem
+        depender de coordenadas de tela ou de conhecer a estrutura interna
+        de widgets. Único ponto de navegação automatizada (usado por
+        take_shots.py); se a navegação mudar de novo, só isto precisa mudar.
+        """
+        index = self.SECTIONS.index(name)
+        self._sidebar.set_current(index)
+        self._on_tab_activated(index)
 
     def _build_status_bar(self):
         self._status_bar = self.statusBar()
 
         self._lbl_hosts = QLabel("Hosts: 0")
-        self._lbl_up    = QLabel("▲ Up: 0")
-        self._lbl_down  = QLabel("▼ Down: 0")
+        self._lbl_up    = count_badge("▲ Up: 0", DARK.success)
+        self._lbl_down  = count_badge("▼ Down: 0", DARK.danger)
         self._lbl_admin = QLabel()
-
-        self._lbl_up.setStyleSheet("color:#4ade80;")
-        self._lbl_down.setStyleSheet("color:#f87171;")
 
         _admin = is_admin()
         admin_txt   = "🔐 Admin" if _admin else "⚠ Sem Admin (ICMP/UDP indisponível)"
-        admin_color = "#4ade80"  if _admin else "#facc15"
+        admin_color = DARK.success if _admin else DARK.warning
         self._lbl_admin.setText(admin_txt)
         self._lbl_admin.setStyleSheet(f"color:{admin_color};")
 
@@ -352,29 +346,7 @@ class MainWindow(QMainWindow):
         self._btn_theme.adjustSize()
 
     def _build_tray(self):
-        icon = self.windowIcon()
-        self._tray = QSystemTrayIcon(icon, self)
-
-        tray_menu = QMenu()
-        act_show = tray_menu.addAction("Abrir NOCPing")
-        act_show.triggered.connect(self._show_from_tray)
-        tray_menu.addSeparator()
-        act_quit = tray_menu.addAction("Sair")
-        act_quit.triggered.connect(QApplication.quit)
-
-        self._tray.setContextMenu(tray_menu)
-        self._tray.setToolTip("NOCPing")
-        self._tray.activated.connect(self._on_tray_activated)
-        self._tray.show()
-
-    def _show_from_tray(self):
-        self.showNormal()
-        self.raise_()
-        self.activateWindow()
-
-    def _on_tray_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            self._show_from_tray()
+        self._tray = SystemTray(self.windowIcon(), self)
 
     def _toggle_notifications(self, checked: bool):
         self._notif_enabled = checked

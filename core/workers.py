@@ -192,7 +192,7 @@ def _resolve_hostname(ip: str, timeout: float = 2.0) -> str:
 class TracerouteWorker(QThread):
     """Worker de traceroute ICMP (requer admin)."""
 
-    hop      = pyqtSignal(dict)   # {ttl, from_ip, hostname, elapsed_ms, timeout, destination_reached, error}
+    hop      = pyqtSignal(dict)   # {ttl, from_ip, hostname, hostname_pending, elapsed_ms, timeout, destination_reached, error}
     finished = pyqtSignal()
     error    = pyqtSignal(str)
 
@@ -229,11 +229,21 @@ class TracerouteWorker(QThread):
 
             hop = traceroute_hop(ip, family, ttl, ttl, pid, self.timeout_ms)
 
-            if hop["from_ip"] and not hop["timeout"]:
+            needs_dns = bool(hop["from_ip"]) and not hop["timeout"]
+            if needs_dns:
+                # Emite o hop imediatamente (sem hostname) para a UI poder
+                # mostrar um indicador de "resolvendo..." em vez de travar
+                # em silêncio pelos até 2s do DNS reverso (_resolve_hostname
+                # continua com o mesmo timeout/lógica de sempre).
+                pending = dict(hop)
+                pending["hostname"] = None
+                pending["hostname_pending"] = True
+                self.hop.emit(pending)
                 hostname = _resolve_hostname(hop["from_ip"])
             else:
                 hostname = None
             hop["hostname"] = hostname
+            hop["hostname_pending"] = False
 
             self.hop.emit(hop)
 

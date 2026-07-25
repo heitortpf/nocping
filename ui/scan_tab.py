@@ -1,177 +1,217 @@
 """
 NOCPing — ui/scan_tab.py
 Aba de port scan multithread.
+
+Redesenhada para usar o design system (ui/theme/): card único de controles
+com QGridLayout (mesmo padrão de Monitor/Traceroute), presets como grupo de
+chips em vez de combobox, barra de progresso com destaque visual maior (é o
+principal feedback de uma operação longa) e cores por token na tabela de
+resultados. core/network.py e ScanWorker não foram tocados — só a camada
+visual.
 """
 import csv
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QSpinBox,
-    QComboBox, QPushButton, QTableWidget, QTableWidgetItem,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLineEdit, QSpinBox,
+    QComboBox, QPushButton, QButtonGroup, QTableWidget, QTableWidgetItem,
     QProgressBar, QLabel, QHeaderView, QFileDialog, QCheckBox,
 )
 from PyQt6.QtGui import QColor
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, QTimer
 
 from core.models import IPVersion
 from core.workers import ScanWorker
-from .widgets._utils import PRIMARY_BTN_STYLE, TABLE_STYLE
+from .widgets._utils import field_label as _lbl, TABLE_STYLE
+from .widgets._worker_tab import WorkerTabMixin
+from .theme.tokens import DARK, SPACING, RADIUS
+from .theme.components import card_frame, primary_button, secondary_button
+from .widgets._reflow_row import ReflowRow
 
 
 _PRESETS: list[tuple[str, str]] = [
-    ("Personalizado",   ""),
-    ("Top 20 – rápido", "21,22,23,25,53,80,110,135,139,143,443,445,993,995,1723,3306,3389,5900,8080,8443"),
-    ("Top 100 – comum", "7,9,13,21,22,23,25,26,37,53,79,80,81,88,106,110,111,113,119,135,139,143,"
-                        "144,179,199,389,427,443,444,445,465,513,514,515,543,544,548,554,587,631,"
-                        "646,873,990,993,995,1025,1026,1027,1028,1029,1110,1433,1720,1723,1755,"
-                        "1900,2000,2001,2049,2121,2717,3000,3128,3306,3389,3986,4899,5000,5009,"
-                        "5051,5060,5101,5190,5357,5432,5631,5666,5800,5900,6000,6001,6646,7070,"
-                        "8000,8008,8009,8080,8081,8443,8888,9100,9999,10000,32768,49152,49153,"
-                        "49154,49155,49156,49157"),
+    ("Top 20", "21,22,23,25,53,80,110,135,139,143,443,445,993,995,1723,3306,3389,5900,8080,8443"),
+    ("Top 100", "7,9,13,21,22,23,25,26,37,53,79,80,81,88,106,110,111,113,119,135,139,143,"
+                "144,179,199,389,427,443,444,445,465,513,514,515,543,544,548,554,587,631,"
+                "646,873,990,993,995,1025,1026,1027,1028,1029,1110,1433,1720,1723,1755,"
+                "1900,2000,2001,2049,2121,2717,3000,3128,3306,3389,3986,4899,5000,5009,"
+                "5051,5060,5101,5190,5357,5432,5631,5666,5800,5900,6000,6001,6646,7070,"
+                "8000,8008,8009,8080,8081,8443,8888,9100,9999,10000,32768,49152,49153,"
+                "49154,49155,49156,49157"),
     ("Todas (1-65535)", "1-65535"),
 ]
 
+_CHIP_QSS = (
+    f"QPushButton{{background:palette(button);color:palette(button-text);"
+    f"border-radius:{RADIUS.sm}px;font-size:11px;border:none;padding:5px {SPACING.sm}px;}}"
+    f"QPushButton:hover{{background:palette(mid);}}"
+    f"QPushButton:checked{{background:{DARK.primary};color:{DARK.on_primary};font-weight:bold;}}"
+)
 
-class ScanTab(QWidget):
+
+class ScanTab(WorkerTabMixin, QWidget):
     scan_finished = pyqtSignal(str, int)
+
+    # Limite de linhas renderizadas na QTableWidget. Cada QTableWidgetItem
+    # inserido custa ~1ms mesmo em lote (medido com 65535 linhas ≈ 70s) —
+    # um scan "Todas (1-65535)" em UDP com "open|filtered" marcado pode
+    # bater esse número de resultados. Além do limite, os resultados
+    # continuam sendo coletados em _results e saem inteiros no "Exportar
+    # CSV"; só a tabela ao vivo é que para de crescer. Ver docs/PERFORMANCE.md.
+    _MAX_TABLE_ROWS = 5000
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker: ScanWorker | None = None
         self._results: list[tuple] = []
         self._manually_stopped = False
+        # Renderização incremental: com o preset "Todas (1-65535)" o scan
+        # pode emitir dezenas de milhares de port_result/progress em
+        # segundos — atualizar a tabela/progress bar a cada sinal trava a
+        # UI thread. Resultados/progresso ficam em buffer e um QTimer (10Hz,
+        # mesmo padrão de ui/widgets/rtt_graph.py) esvazia em lotes.
+        self._pending_rows: list[tuple] = []
+        self._pending_progress: tuple[int, int] | None = None
         self._build_ui()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
-        root.setSpacing(8)
+        root.setContentsMargins(SPACING.lg, SPACING.lg, SPACING.lg, SPACING.lg)
+        root.setSpacing(SPACING.md)
 
-        # --- Linha 1: host + predefinição + portas ---
-        row1 = QHBoxLayout()
-        row1.setSpacing(6)
+        # ── Card único de controles ──────────────────────────────────
+        panel = card_frame(RADIUS.md)
+        pl = QVBoxLayout(panel)
+        pl.setContentsMargins(SPACING.lg, SPACING.md, SPACING.lg, SPACING.md)
+        pl.setSpacing(SPACING.sm)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(SPACING.sm)
+        grid.setVerticalSpacing(2)
+        grid.setColumnStretch(0, 1)  # host — expansível
+
+        grid.addWidget(_lbl("HOST / IP"), 0, 0)
+        grid.addWidget(_lbl("PORTAS"), 0, 1)
+        grid.addWidget(_lbl("TIMEOUT"), 0, 2)
+        grid.addWidget(_lbl("THREADS"), 0, 3)
+        grid.addWidget(_lbl("VERSÃO IP"), 0, 4)
+        grid.addWidget(_lbl("PROTOCOLO"), 0, 5)
 
         self._inp_host = QLineEdit()
         self._inp_host.setPlaceholderText("Host ou IP")
+        self._inp_host.setFixedHeight(34)
         self._inp_host.setMinimumWidth(140)
-
-        lbl_pre = QLabel("Predefinição:")
-        lbl_pre.setStyleSheet("color:#9ca3af;")
-        self._cmb_preset = QComboBox()
-        for name, _ in _PRESETS:
-            self._cmb_preset.addItem(name)
-        self._cmb_preset.setFixedWidth(155)
-        self._cmb_preset.currentIndexChanged.connect(self._on_preset_changed)
 
         self._inp_ports = QLineEdit()
         self._inp_ports.setPlaceholderText("1-1024,3389,8080")
-        self._inp_ports.setMinimumWidth(120)
+        self._inp_ports.setFixedHeight(34)
+        self._inp_ports.setMinimumWidth(140)
         self._inp_ports.textEdited.connect(self._on_ports_edited)
 
-        row1.addWidget(self._inp_host, 2)
-        row1.addWidget(lbl_pre)
-        row1.addWidget(self._cmb_preset)
-        row1.addWidget(self._inp_ports, 1)
-        root.addLayout(row1)
-
-        # --- Linha 2: opções + botões ---
-        row2 = QHBoxLayout()
-        row2.setSpacing(6)
-
-        lbl_t = QLabel("Timeout:")
-        lbl_t.setStyleSheet("color:#9ca3af;")
         self._inp_timeout = QSpinBox()
         self._inp_timeout.setRange(50, 10000)
         self._inp_timeout.setValue(200)
         self._inp_timeout.setSuffix(" ms")
-        self._inp_timeout.setFixedWidth(110)
+        self._inp_timeout.setFixedHeight(34)
+        self._inp_timeout.setFixedWidth(100)
 
-        lbl_th = QLabel("Threads:")
-        lbl_th.setStyleSheet("color:#9ca3af;")
         self._inp_threads = QSpinBox()
         self._inp_threads.setRange(1, 512)
         self._inp_threads.setValue(200)
-        self._inp_threads.setFixedWidth(80)
+        self._inp_threads.setFixedHeight(34)
+        self._inp_threads.setFixedWidth(75)
 
-        lbl_ip = QLabel("Versão IP:")
-        lbl_ip.setStyleSheet("color:#9ca3af;")
         self._cmb_ip = QComboBox()
         for v in IPVersion:
             self._cmb_ip.addItem(v.value, v)
-        self._cmb_ip.setFixedWidth(65)
+        self._cmb_ip.setFixedHeight(34)
+        self._cmb_ip.setFixedWidth(75)
 
-        lbl_proto = QLabel("Protocolo:")
-        lbl_proto.setStyleSheet("color:#9ca3af;")
         self._cmb_proto = QComboBox()
         for label in ("TCP", "UDP", "TCP+UDP"):
             self._cmb_proto.addItem(label, label)
-        self._cmb_proto.setFixedWidth(85)
+        self._cmb_proto.setFixedHeight(34)
+        self._cmb_proto.setFixedWidth(95)
 
-        self._btn_start = QPushButton("▶ Iniciar Scan")
-        self._btn_start.setFixedHeight(30)
-        self._btn_start.setStyleSheet(PRIMARY_BTN_STYLE)
-        self._btn_start.clicked.connect(self._start)
+        grid.addWidget(self._inp_host,    1, 0)
+        grid.addWidget(self._inp_ports,   1, 1)
+        grid.addWidget(self._inp_timeout, 1, 2)
+        grid.addWidget(self._inp_threads, 1, 3)
+        grid.addWidget(self._cmb_ip,      1, 4)
+        grid.addWidget(self._cmb_proto,   1, 5)
+        pl.addLayout(grid)
 
-        self._btn_stop = QPushButton("⏹ Parar")
-        self._btn_stop.setFixedHeight(30)
-        self._btn_stop.setEnabled(False)
-        self._btn_stop.setStyleSheet(
-            "QPushButton{background:palette(button);color:palette(button-text);"
-            "border-radius:4px;font-size:12px;border:none;padding:0 8px;}"
-            "QPushButton:hover{background:palette(mid);}"
-            "QPushButton:disabled{color:palette(placeholder-text);}"
-        )
-        self._btn_stop.clicked.connect(self._stop)
-
-        self._btn_export = QPushButton("💾 Exportar CSV")
-        self._btn_export.setFixedHeight(30)
-        self._btn_export.setEnabled(False)
-        self._btn_export.setStyleSheet(
-            "QPushButton{background:palette(button);color:palette(button-text);"
-            "border-radius:4px;font-size:12px;border:none;padding:0 8px;}"
-            "QPushButton:hover{background:palette(mid);}"
-            "QPushButton:disabled{color:palette(placeholder-text);}"
-        )
-        self._btn_export.clicked.connect(self._export_csv)
-
-        row2.addWidget(lbl_t)
-        row2.addWidget(self._inp_timeout)
-        row2.addWidget(lbl_th)
-        row2.addWidget(self._inp_threads)
-        row2.addWidget(lbl_ip)
-        row2.addWidget(self._cmb_ip)
-        row2.addWidget(lbl_proto)
-        row2.addWidget(self._cmb_proto)
+        # ── Presets como grupo de chips + ação ───────────────────────
+        # ReflowRow em vez de QHBoxLayout puro: em janelas estreitas (perto
+        # do mínimo de 800x500) essa linha não cabia mais sem comprimir
+        # texto de botão/chip a ponto de ficar ilegível — ver
+        # docs/redesign/VERIFICACAO_FASE3.md. ReflowRow mantém a aparência
+        # de linha única com stretch em janelas largas (nada muda em
+        # ~1100px+) e só quebra pra duas linhas quando realmente não cabe.
+        lbl_preset = _lbl("PREDEFINIÇÃO")
+        self._chip_group = QButtonGroup(self)
+        self._chip_group.setExclusive(True)
+        chips = []
+        for name, ports in _PRESETS:
+            chip = QPushButton(name)
+            chip.setCheckable(True)
+            chip.setFixedHeight(26)
+            chip.setStyleSheet(_CHIP_QSS)
+            chip.clicked.connect(lambda _checked, p=ports: self._apply_preset(p))
+            self._chip_group.addButton(chip)
+            chips.append(chip)
 
         self._chk_udp_filtered = QCheckBox("UDP open|filtered")
-        self._chk_udp_filtered.setStyleSheet("color:#9ca3af; font-size:12px;")
-        row2.addWidget(self._chk_udp_filtered)
-        row2.addStretch()
-        row2.addWidget(self._btn_start)
-        row2.addWidget(self._btn_stop)
-        row2.addWidget(self._btn_export)
-        root.addLayout(row2)
+        self._chk_udp_filtered.setStyleSheet("color:palette(placeholder-text); font-size:12px;")
 
-        # --- Barra de progresso + stats ---
-        prog_row = QHBoxLayout()
+        self._btn_start = primary_button("Iniciar Scan", icon="▶")
+        self._btn_start.setFixedHeight(30)
+        self._btn_start.clicked.connect(self._start)
+
+        self._btn_stop = secondary_button("Parar", icon="⏹")
+        self._btn_stop.setFixedHeight(30)
+        self._btn_stop.setEnabled(False)
+        self._btn_stop.clicked.connect(self._stop)
+
+        self._btn_export = secondary_button("Exportar CSV", icon="💾")
+        self._btn_export.setFixedHeight(30)
+        self._btn_export.setEnabled(False)
+        self._btn_export.clicked.connect(self._export_csv)
+
+        action_row = ReflowRow(
+            left=[lbl_preset, *chips, SPACING.md, self._chk_udp_filtered],
+            right=[self._btn_start, self._btn_stop, self._btn_export],
+            spacing=SPACING.xs,
+        )
+        pl.addWidget(action_row)
+
+        root.addWidget(panel)
+
+        # ── Progresso — feedback principal de uma operação longa ────
+        prog_card = card_frame(RADIUS.md)
+        prog_layout = QHBoxLayout(prog_card)
+        prog_layout.setContentsMargins(SPACING.lg, SPACING.sm, SPACING.lg, SPACING.sm)
+        prog_layout.setSpacing(SPACING.md)
+
         self._progress = QProgressBar()
         self._progress.setRange(0, 100)
         self._progress.setValue(0)
         self._progress.setTextVisible(True)
-        self._progress.setFormat("%v / %m portas")
-        self._progress.setStyleSheet("""
-            QProgressBar {
-                background:palette(button); border-radius:4px; color:palette(button-text);
-                text-align:center; font-size:11px; height:18px;
-            }
-            QProgressBar::chunk { background:#7c3aed; border-radius:4px; }
+        self._progress.setFormat("%p%  —  %v / %m portas")
+        self._progress.setFixedHeight(28)
+        self._progress.setStyleSheet(f"""
+            QProgressBar {{
+                background:palette(button); border-radius:{RADIUS.sm}px; color:palette(button-text);
+                text-align:center; font-size:13px; font-weight:bold;
+            }}
+            QProgressBar::chunk {{ background:{DARK.primary}; border-radius:{RADIUS.sm}px; }}
         """)
         self._lbl_open = QLabel("Abertas: 0")
-        self._lbl_open.setStyleSheet("color:#4ade80; font-size:12px; min-width:80px;")
-        prog_row.addWidget(self._progress, 1)
-        prog_row.addWidget(self._lbl_open)
-        root.addLayout(prog_row)
+        self._lbl_open.setStyleSheet(f"color:{DARK.success}; font-size:14px; font-weight:bold; min-width:90px;")
+        prog_layout.addWidget(self._progress, 1)
+        prog_layout.addWidget(self._lbl_open)
+        root.addWidget(prog_card)
 
-        # --- Tabela ---
+        # ── Tabela ─────────────────────────────────────────────────────
         self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(["Porta", "Proto", "Serviço", "RTT", "Status"])
         hdr = self._table.horizontalHeader()
@@ -184,35 +224,35 @@ class ScanTab(QWidget):
         self._table.setStyleSheet(
             TABLE_STYLE + "QTableWidget { alternate-background-color:palette(alternate-base); border:none; }"
         )
-        root.addWidget(self._table)
+        root.addWidget(self._table, 1)
+
+        self._flush_timer = QTimer(self)
+        self._flush_timer.setInterval(100)  # max 10 Hz, mesmo throttle do RttGraph
+        self._flush_timer.timeout.connect(self._flush_pending)
+        self._flush_timer.start()
 
     # ------------------------------------------------------------------
 
-    def _on_preset_changed(self, idx: int):
-        _, ports = _PRESETS[idx]
-        if ports:
-            self._inp_ports.setText(ports)
+    def _apply_preset(self, ports: str):
+        self._inp_ports.setText(ports)
 
     def _on_ports_edited(self):
-        self._cmb_preset.blockSignals(True)
-        self._cmb_preset.setCurrentIndex(0)  # volta para "Personalizado"
-        self._cmb_preset.blockSignals(False)
+        checked = self._chip_group.checkedButton()
+        if checked is not None:
+            # QButtonGroup exclusivo ignora setChecked(False) no único botão
+            # marcado (mantém sempre 1 selecionado) — precisa soltar a
+            # exclusividade momentaneamente para permitir "nenhum marcado".
+            self._chip_group.setExclusive(False)
+            checked.setChecked(False)
+            self._chip_group.setExclusive(True)
 
-    def _cleanup_worker(self):
-        if self._worker is None:
-            return
-        try:
-            self._worker.port_result.disconnect(self._on_port_result)
-            self._worker.progress.disconnect(self._on_progress)
-            self._worker.finished_ok.disconnect(self._on_finished)
-            self._worker.error.disconnect(self._on_error)
-        except RuntimeError:
-            pass
-        if self._worker.isRunning():
-            self._worker.stop()
-            self._worker.wait(2000)
-        self._worker.deleteLater()
-        self._worker = None
+    def _worker_signal_pairs(self):
+        return [
+            ("port_result", "_on_port_result"),
+            ("progress",    "_on_progress"),
+            ("finished_ok", "_on_finished"),
+            ("error",       "_on_error"),
+        ]
 
     def _start(self):
         host = self._inp_host.text().strip()
@@ -227,6 +267,8 @@ class ScanTab(QWidget):
         self._manually_stopped = False
         self._lbl_open.setText("Abertas: 0")
         self._btn_export.setEnabled(False)
+        self._pending_rows.clear()
+        self._pending_progress = None
 
         port_spec = self._inp_ports.text().strip()
         ip_version = self._cmb_ip.currentData()
@@ -249,7 +291,7 @@ class ScanTab(QWidget):
             total = 1024
         self._progress.setRange(0, total)
         self._progress.setValue(0)
-        self._progress.setFormat(f"%v / {total} portas")
+        self._progress.setFormat(f"%p%  —  %v / {total} portas")
 
         self._btn_start.setEnabled(False)
         self._btn_stop.setEnabled(True)
@@ -272,9 +314,17 @@ class ScanTab(QWidget):
             return
 
         self._open_count = getattr(self, "_open_count", 0) + 1
-        self._lbl_open.setText(f"Abertas: {self._open_count}")
+        if self._open_count > self._MAX_TABLE_ROWS:
+            suffix = f"  (exibindo {self._MAX_TABLE_ROWS} — CSV tem os {self._open_count})"
+        else:
+            suffix = ""
+        self._lbl_open.setText(f"Abertas: {self._open_count}{suffix}")
         self._results.append((port, is_open, ms, protocol))
+        # A linha só é inserida na tabela no próximo tick do _flush_timer —
+        # ver comentário em __init__ sobre renderização incremental.
+        self._pending_rows.append((port, is_open, ms, protocol))
 
+    def _insert_row(self, port: int, is_open: bool, ms: float, protocol: str):
         try:
             import socket
             svc = socket.getservbyport(port, protocol.lower() if protocol in ("TCP", "UDP") else "tcp")
@@ -282,29 +332,49 @@ class ScanTab(QWidget):
             svc = "—"
 
         status_text  = "● Aberta"       if is_open else "◎ open|filtered"
-        status_color = "#4ade80"        if is_open else "#facc15"
-        proto_color  = "#60a5fa" if protocol == "UDP" else "#a78bfa"
+        status_color = DARK.success     if is_open else DARK.warning
+        proto_color  = DARK.link if protocol == "UDP" else DARK.info
         row = self._table.rowCount()
         self._table.insertRow(row)
 
-        items = [
-            (str(port),      "#4ade80"),
-            (protocol,       proto_color),
-            (svc,            "#9ca3af"),
-            (f"{ms:.1f} ms", "#cdd6f4"),
-            (status_text,    status_color),
-        ]
-        for col, (text, color) in enumerate(items):
+        def cell(text: str, color: str | None) -> QTableWidgetItem:
             item = QTableWidgetItem(text)
-            item.setForeground(QColor(color))
-            self._table.setItem(row, col, item)
+            if color is not None:
+                item.setForeground(QColor(color))
+            return item
 
-        self._table.scrollToBottom()
+        self._table.setItem(row, 0, cell(str(port),      DARK.success))
+        self._table.setItem(row, 1, cell(protocol,        proto_color))
+        self._table.setItem(row, 2, cell(svc,              DARK.text_muted))
+        self._table.setItem(row, 3, cell(f"{ms:.1f} ms",  None))  # cor padrão da tabela (palette(text))
+        self._table.setItem(row, 4, cell(status_text,      status_color))
 
     def _on_progress(self, done: int, total: int):
-        self._progress.setValue(done)
+        self._pending_progress = (done, total)
+
+    def _flush_pending(self):
+        """Esvazia em lote o que _on_progress/_on_port_result acumularam
+        desde o último tick (10 Hz) — evita travar a UI thread com milhares
+        de setValue()/insertRow() individuais durante um scan de "Todas"."""
+        if self._pending_progress is not None:
+            done, total = self._pending_progress
+            self._progress.setValue(done)
+            self._pending_progress = None
+
+        if not self._pending_rows:
+            return
+        rows, self._pending_rows = self._pending_rows, []
+        room = self._MAX_TABLE_ROWS - self._table.rowCount()
+        if room <= 0:
+            return
+        self._table.setUpdatesEnabled(False)
+        for port, is_open, ms, protocol in rows[:room]:
+            self._insert_row(port, is_open, ms, protocol)
+        self._table.setUpdatesEnabled(True)
+        self._table.scrollToBottom()
 
     def _on_finished(self):
+        self._flush_pending()
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
         self._btn_export.setEnabled(bool(self._results))

@@ -1,8 +1,17 @@
 """
 NOCPing — ui/widgets/host_card.py
 Card individual por host — layout com seções separadas e hierarquia visual clara.
+
+Redesenhado para usar o design system (ui/theme/): status_badge/cores
+compartilhadas com o resto do app (STATUS_COLOR/STATUS_LABEL não são mais
+duplicadas aqui), RTT atual em destaque tipográfico maior (TYPOGRAPHY.hero),
+stats secundárias (média/jitter/perda) menores, e rodapé de ações compacto.
+Jitter é novo aqui — mesmo cálculo (stdev dos últimos RTTs) já usado em
+QuickPingTab. HostCard.status_changed, PingWorker e a gravação no
+HistoryStore em _on_result não foram alterados.
 """
 import csv
+import statistics as _stats
 from collections import deque
 
 from PyQt6.QtWidgets import (
@@ -16,31 +25,18 @@ from core.models import ProbeConfig, ProbeMode, IPVersion, HostStatus, PingResul
 from core.workers import PingWorker
 from core.history_store import HistoryStore
 from ._utils import rtt_color as _rtt_color
-
-
-STATUS_COLOR = {
-    HostStatus.IDLE:    "#6b7280",
-    HostStatus.RUNNING: "#a78bfa",
-    HostStatus.UP:      "#4ade80",
-    HostStatus.DOWN:    "#f87171",
-    HostStatus.ERROR:   "#facc15",
-}
-
-STATUS_LABEL = {
-    HostStatus.IDLE:    "INATIVO",
-    HostStatus.RUNNING: "INICIANDO…",
-    HostStatus.UP:      "ONLINE",
-    HostStatus.DOWN:    "OFFLINE",
-    HostStatus.ERROR:   "ERRO",
-}
+from ..theme.tokens import DARK, SPACING, RADIUS, TYPOGRAPHY
+from ..theme.components import (
+    STATUS_COLOR, STATUS_LABEL, primary_button, secondary_button,
+)
 
 
 def _stat_col(label: str, value_widget: QLabel) -> QVBoxLayout:
-    """Coluna de estatística: rótulo pequeno em cima, valor grande embaixo."""
+    """Coluna de estatística: rótulo pequeno em cima, valor embaixo."""
     col = QVBoxLayout()
     col.setSpacing(1)
     lbl = QLabel(label)
-    lbl.setStyleSheet("color:#6b7280; font-size:10px; letter-spacing:0.5px;")
+    lbl.setStyleSheet(f"color:{DARK.text_muted}; font-size:10px; letter-spacing:0.5px;")
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     value_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
     col.addWidget(lbl)
@@ -65,15 +61,16 @@ class HostCard(QFrame):
         self._sum_ms = 0.0
         self._min_ms = float("inf")
         self._max_ms = 0.0
+        self._recent_rtts: deque[float] = deque(maxlen=50)  # p/ jitter (stdev)
 
         self.setFixedWidth(320)
         self.setObjectName("HostCard")
-        self.setStyleSheet("""
-            #HostCard {
+        self.setStyleSheet(f"""
+            #HostCard {{
                 background: palette(base);
                 border: 1px solid palette(mid);
-                border-radius: 10px;
-            }
+                border-radius: {RADIUS.md}px;
+            }}
         """)
         self._build_ui()
 
@@ -86,27 +83,24 @@ class HostCard(QFrame):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ── Cabeçalho ───────────────────────────────────────────────────
+        # ── Cabeçalho: dot + host + status_badge + remover ──────────────
         header = QFrame()
         header.setObjectName("CardHeader")
-        header.setStyleSheet("""
-            #CardHeader {
+        header.setStyleSheet(f"""
+            #CardHeader {{
                 background: palette(alternate-base);
-                border-top-left-radius: 10px;
-                border-top-right-radius: 10px;
+                border-top-left-radius: {RADIUS.md}px;
+                border-top-right-radius: {RADIUS.md}px;
                 border-bottom: 1px solid palette(mid);
-            }
+            }}
         """)
         h_layout = QVBoxLayout(header)
-        h_layout.setContentsMargins(12, 10, 12, 10)
+        h_layout.setContentsMargins(SPACING.md, SPACING.sm, SPACING.md, SPACING.sm)
         h_layout.setSpacing(4)
 
-        # Hostname + botão remover
         title_row = QHBoxLayout()
         self._indicator = QLabel("●")
-        self._indicator.setStyleSheet(
-            f"color:{STATUS_COLOR[HostStatus.IDLE]}; font-size:16px;"
-        )
+        self._indicator.setStyleSheet(f"color:{STATUS_COLOR[HostStatus.IDLE]}; font-size:16px;")
         self._indicator.setFixedWidth(20)
 
         self._lbl_host = QLabel(self.config.host)
@@ -117,6 +111,8 @@ class HostCard(QFrame):
         self._lbl_host.setFont(font_host)
         self._lbl_host.setStyleSheet("color:palette(text);")
 
+        # status_badge — mesma cor/texto por HostStatus usados em todo o app
+        # (ui/theme/components.py); atualizado in-place em _set_status().
         self._lbl_status_text = QLabel(STATUS_LABEL[HostStatus.IDLE])
         self._lbl_status_text.setStyleSheet(
             f"color:{STATUS_COLOR[HostStatus.IDLE]}; font-size:10px; font-weight:bold;"
@@ -125,8 +121,8 @@ class HostCard(QFrame):
         btn_remove = QPushButton("✕")
         btn_remove.setFixedSize(22, 22)
         btn_remove.setStyleSheet(
-            "QPushButton{background:transparent;color:#6b7280;border:none;font-size:14px;}"
-            "QPushButton:hover{color:#f87171;}"
+            f"QPushButton{{background:transparent;color:{DARK.text_muted};border:none;font-size:14px;}}"
+            f"QPushButton:hover{{color:{DARK.danger};}}"
         )
         btn_remove.clicked.connect(lambda: self.removed.emit(self))
 
@@ -143,9 +139,9 @@ class HostCard(QFrame):
         if self.config.mode != ProbeMode.ICMP:
             _mode_str += f"  ·  porta {self.config.port}"
         self._lbl_mode = QLabel(_mode_str)
-        self._lbl_mode.setStyleSheet("color:#6b7280; font-size:11px;")
+        self._lbl_mode.setStyleSheet(f"color:{DARK.text_muted}; font-size:11px;")
         self._lbl_ip = QLabel("resolvendo…")
-        self._lbl_ip.setStyleSheet("color:#6b7280; font-size:11px;")
+        self._lbl_ip.setStyleSheet(f"color:{DARK.text_muted}; font-size:11px;")
         self._lbl_ip.setAlignment(Qt.AlignmentFlag.AlignRight)
         sub_row.addWidget(self._lbl_mode)
         sub_row.addStretch()
@@ -157,13 +153,13 @@ class HostCard(QFrame):
         # ── Corpo ────────────────────────────────────────────────────────
         body = QFrame()
         body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(12, 10, 12, 10)
-        body_layout.setSpacing(10)
+        body_layout.setContentsMargins(SPACING.md, SPACING.sm, SPACING.md, SPACING.sm)
+        body_layout.setSpacing(SPACING.sm)
 
         # Seletor IPv4 / IPv6
         ip_row = QHBoxLayout()
         ip_lbl = QLabel("VERSÃO IP:")
-        ip_lbl.setStyleSheet("color:#6b7280; font-size:10px; letter-spacing:0.5px;")
+        ip_lbl.setStyleSheet(f"color:{DARK.text_muted}; font-size:10px; letter-spacing:0.5px;")
         ip_row.addWidget(ip_lbl)
         ip_row.addSpacing(6)
 
@@ -176,13 +172,13 @@ class HostCard(QFrame):
             btn.setCheckable(True)
             btn.setFixedHeight(22)
             btn.setFixedWidth(44)
-            btn.setStyleSheet("""
-                QPushButton {
+            btn.setStyleSheet(f"""
+                QPushButton {{
                     background:palette(button); color:palette(button-text);
                     border-radius:4px; font-size:11px; border:none;
-                }
-                QPushButton:checked { background:#7c3aed; color:#fff; font-weight:bold; }
-                QPushButton:hover:!checked { background:palette(mid); color:palette(text); }
+                }}
+                QPushButton:checked {{ background:{DARK.primary}; color:{DARK.on_primary}; font-weight:bold; }}
+                QPushButton:hover:!checked {{ background:palette(mid); color:palette(text); }}
             """)
             btn.setProperty("version", version)
             btn.clicked.connect(self._on_ip_version_changed)
@@ -193,24 +189,32 @@ class HostCard(QFrame):
         ip_row.addStretch()
         body_layout.addLayout(ip_row)
 
-        # Divisor
         body_layout.addWidget(_hline())
 
-        # ── Estatísticas — 3 colunas ────────────────────────────────────
-        self._val_rtt  = _big_value("—")
-        self._val_avg  = _big_value("—")
-        self._val_loss = _big_value("0%")
+        # ── RTT atual — hero, tipograficamente maior que o resto ────────
+        self._val_rtt = QLabel("—")
+        self._val_rtt.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._val_rtt.setStyleSheet(
+            f"color:{DARK.text_muted}; font-size:{TYPOGRAPHY.hero.size}px; "
+            f"font-weight:{TYPOGRAPHY.hero.weight};"
+        )
+        body_layout.addWidget(self._val_rtt)
+
+        # ── Stats secundárias — Média / Jitter / Perda (menores que o hero) ─
+        self._val_avg    = _stat_value()
+        self._val_jitter = _stat_value()
+        self._val_loss   = _stat_value("0%")
 
         stats_row = QHBoxLayout()
         stats_row.setSpacing(0)
-        stats_row.addLayout(_stat_col("RTT ATUAL",   self._val_rtt))
+        stats_row.addLayout(_stat_col("MÉDIA",  self._val_avg))
         stats_row.addWidget(_vline())
-        stats_row.addLayout(_stat_col("MÉDIA",       self._val_avg))
+        stats_row.addLayout(_stat_col("JITTER", self._val_jitter))
         stats_row.addWidget(_vline())
-        stats_row.addLayout(_stat_col("PERDA",       self._val_loss))
+        stats_row.addLayout(_stat_col("PERDA",  self._val_loss))
         body_layout.addLayout(stats_row)
 
-        # Min / Max / Seq em linha secundária
+        # Min / Max / Seq — terciário, discreto
         secondary = QHBoxLayout()
         self._lbl_min  = _dim_label("Mín: —")
         self._lbl_max  = _dim_label("Máx: —")
@@ -221,18 +225,22 @@ class HostCard(QFrame):
                 secondary.addStretch()
         body_layout.addLayout(secondary)
 
-        # Divisor
         body_layout.addWidget(_hline())
 
-        # Gráfico RTT
+        # Mini-gráfico RTT — _FlowLayout do MonitorTab depende do tamanho
+        # deste card para quebrar linha; NÃO alterar setFixedHeight sem
+        # revalidar o redimensionamento da janela manualmente.
         from .rtt_graph import RttGraph
         self._graph = RttGraph()
         self._graph.setFixedHeight(80)
         body_layout.addWidget(self._graph)
 
+        body_layout.addWidget(_hline())
+
+        # ── Rodapé compacto: Histórico/Exportar + Iniciar/Parar ──────────
         _link_style = (
-            "QPushButton{color:#7c3aed;font-size:10px;border:none;background:transparent;}"
-            "QPushButton:hover{color:#6d28d9;text-decoration:underline;}"
+            f"QPushButton{{color:{DARK.primary};font-size:10px;border:none;background:transparent;}}"
+            f"QPushButton:hover{{color:{DARK.primary_hover};text-decoration:underline;}}"
         )
         footer_row = QHBoxLayout()
         btn_history = QPushButton("⏱ Histórico")
@@ -248,28 +256,12 @@ class HostCard(QFrame):
         footer_row.addWidget(btn_export_rtt, alignment=Qt.AlignmentFlag.AlignRight)
         body_layout.addLayout(footer_row)
 
-        # Divisor
-        body_layout.addWidget(_hline())
-
-        # Botões Start / Stop
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
-        self._btn_start = QPushButton("▶  Iniciar")
-        self._btn_stop  = QPushButton("⏹  Parar")
+        btn_row.setSpacing(SPACING.sm)
+        self._btn_start = primary_button("Iniciar", icon="▶")
+        self._btn_stop  = secondary_button("Parar", icon="⏹")
         self._btn_start.setFixedHeight(30)
         self._btn_stop.setFixedHeight(30)
-        self._btn_start.setStyleSheet(
-            "QPushButton{background:#7c3aed;color:#fff;border-radius:5px;"
-            "font-size:12px;font-weight:bold;border:none;}"
-            "QPushButton:hover{background:#6d28d9;}"
-            "QPushButton:disabled{background:palette(button);color:palette(placeholder-text);}"
-        )
-        self._btn_stop.setStyleSheet(
-            "QPushButton{background:palette(button);color:palette(button-text);"
-            "border-radius:5px;font-size:12px;border:none;}"
-            "QPushButton:hover{background:palette(mid);}"
-            "QPushButton:disabled{color:palette(placeholder-text);}"
-        )
         self._btn_stop.setEnabled(False)
         self._btn_start.clicked.connect(self.start)
         self._btn_stop.clicked.connect(self.stop)
@@ -292,6 +284,7 @@ class HostCard(QFrame):
         self._sum_ms = 0.0
         self._min_ms = float("inf")
         self._max_ms = 0.0
+        self._recent_rtts.clear()
         self._graph.reset()
         self._reset_stats()
         self._set_status(HostStatus.RUNNING)
@@ -335,6 +328,7 @@ class HostCard(QFrame):
         if r.success and r.elapsed_ms > 0:
             self._ok_count += 1
             self._sum_ms += r.elapsed_ms
+            self._recent_rtts.append(r.elapsed_ms)
             if r.elapsed_ms < self._min_ms:
                 self._min_ms = r.elapsed_ms
             if r.elapsed_ms > self._max_ms:
@@ -344,11 +338,15 @@ class HostCard(QFrame):
             self._set_status(HostStatus.UP)
             c = _rtt_color(r.elapsed_ms)
             self._val_rtt.setText(f"{r.elapsed_ms:.1f} ms")
-            self._val_rtt.setStyleSheet(f"color:{c}; font-size:20px; font-weight:bold;")
+            self._val_rtt.setStyleSheet(
+                f"color:{c}; font-size:{TYPOGRAPHY.hero.size}px; font-weight:{TYPOGRAPHY.hero.weight};"
+            )
         else:
             self._set_status(HostStatus.DOWN)
             self._val_rtt.setText("timeout")
-            self._val_rtt.setStyleSheet("color:#f87171; font-size:16px; font-weight:bold;")
+            self._val_rtt.setStyleSheet(
+                f"color:{DARK.danger}; font-size:18px; font-weight:{TYPOGRAPHY.hero.weight};"
+            )
 
         # Estatísticas a partir dos contadores O(1)
         lost = self._total_count - self._ok_count
@@ -357,13 +355,23 @@ class HostCard(QFrame):
         mn = self._min_ms if self._ok_count else 0.0
         mx = self._max_ms if self._ok_count else 0.0
 
-        avg_c = _rtt_color(avg) if self._ok_count else "#6b7280"
-        self._val_avg.setText(f"{avg:.1f} ms" if self._ok_count else "—")
-        self._val_avg.setStyleSheet(f"color:{avg_c}; font-size:20px; font-weight:bold;")
+        # Jitter (stdev dos últimos RTTs) — mesmo cálculo do QuickPingTab
+        if len(self._recent_rtts) > 1:
+            jitter = _stats.stdev(self._recent_rtts)
+        else:
+            jitter = 0.0
 
-        loss_c = "#f87171" if loss_pct > 5 else ("#facc15" if loss_pct > 0 else "#4ade80")
+        avg_c = _rtt_color(avg) if self._ok_count else DARK.text_muted
+        self._val_avg.setText(f"{avg:.1f} ms" if self._ok_count else "—")
+        self._val_avg.setStyleSheet(f"color:{avg_c}; font-size:{TYPOGRAPHY.value.size}px; font-weight:bold;")
+
+        jit_c = _rtt_color(jitter * 2) if self._ok_count else DARK.text_muted
+        self._val_jitter.setText(f"{jitter:.1f} ms" if self._ok_count else "—")
+        self._val_jitter.setStyleSheet(f"color:{jit_c}; font-size:{TYPOGRAPHY.value.size}px; font-weight:bold;")
+
+        loss_c = DARK.danger if loss_pct > 5 else (DARK.warning if loss_pct > 0 else DARK.success)
         self._val_loss.setText(f"{loss_pct:.0f}%")
-        self._val_loss.setStyleSheet(f"color:{loss_c}; font-size:20px; font-weight:bold;")
+        self._val_loss.setStyleSheet(f"color:{loss_c}; font-size:{TYPOGRAPHY.value.size}px; font-weight:bold;")
 
         self._lbl_min.setText(f"Mín: {mn:.1f}ms" if self._ok_count else "Mín: —")
         self._lbl_max.setText(f"Máx: {mx:.1f}ms" if self._ok_count else "Máx: —")
@@ -426,9 +434,13 @@ class HostCard(QFrame):
             self.status_changed.emit(self.config.host, old, status)
 
     def _reset_stats(self):
-        for w in (self._val_rtt, self._val_avg, self._val_loss):
+        self._val_rtt.setText("—")
+        self._val_rtt.setStyleSheet(
+            f"color:{DARK.text_muted}; font-size:{TYPOGRAPHY.hero.size}px; font-weight:{TYPOGRAPHY.hero.weight};"
+        )
+        for w in (self._val_avg, self._val_jitter, self._val_loss):
             w.setText("—")
-            w.setStyleSheet("color:#6b7280; font-size:20px; font-weight:bold;")
+            w.setStyleSheet(f"color:{DARK.text_muted}; font-size:{TYPOGRAPHY.value.size}px; font-weight:bold;")
         self._val_loss.setText("0%")
         self._lbl_min.setText("Mín: —")
         self._lbl_max.setText("Máx: —")
@@ -443,16 +455,16 @@ class HostCard(QFrame):
 # Helpers de widgets
 # ---------------------------------------------------------------------------
 
-def _big_value(text: str) -> QLabel:
+def _stat_value(text: str = "—") -> QLabel:
     lbl = QLabel(text)
-    lbl.setStyleSheet("color:#6b7280; font-size:20px; font-weight:bold;")
+    lbl.setStyleSheet(f"color:{DARK.text_muted}; font-size:{TYPOGRAPHY.value.size}px; font-weight:bold;")
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     return lbl
 
 
 def _dim_label(text: str) -> QLabel:
     lbl = QLabel(text)
-    lbl.setStyleSheet("color:#6b7280; font-size:10px;")
+    lbl.setStyleSheet(f"color:{DARK.text_muted}; font-size:10px;")
     return lbl
 
 
