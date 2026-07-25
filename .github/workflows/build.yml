@@ -42,11 +42,23 @@ jobs:
 
       # Linux não tem display por padrão no runner -- os testes de UI
       # (test_ui_navigation.py/test_ui_theme.py, via pytest-qt) instanciam
-      # MainWindow de verdade e precisam de um X server. Windows/macOS já
-      # têm display nativo no runner, então rodam pytest direto.
-      - name: Rodar testes (Linux — xvfb)
+      # MainWindow de verdade e precisam de um backend Qt sem X server real.
+      # xvfb-run abortava (SIGABRT) na primeiríssima QApplication() da suíte
+      # neste runner/versão do Qt (reproduzido 3x seguidas no release da
+      # v2.0.0, sem traceback Python legível -- crash no nível XCB/C++, não
+      # algo corrigível em código da aplicação). QT_QPA_PLATFORM=offscreen é
+      # o plugin de plataforma do próprio Qt pra teste headless: não abre
+      # conexão X11/XCB nenhuma, então não depende de xvfb nem do stack XCB
+      # do sistema -- mais robusto pra CI. A suíte não faz captura de tela
+      # baseada em pixel (isso vive em scripts/visual_regression.py,
+      # separado, não roda aqui), só estado lógico de widget/sinal, que o
+      # offscreen suporta igual a um display real. Windows/macOS já têm
+      # display nativo no runner, então rodam pytest direto.
+      - name: Rodar testes (Linux — offscreen)
         if: runner.os == 'Linux'
-        run: xvfb-run -a pytest tests/ -v -m "not live"
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest tests/ -v -m "not live"
 
       - name: Rodar testes (Windows/macOS)
         if: runner.os != 'Linux'
