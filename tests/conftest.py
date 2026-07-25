@@ -27,10 +27,11 @@ def isolate_hosts_persistence(monkeypatch):
 @pytest.fixture
 def clean_main_window_instances():
     """MainWindow._instances é uma lista de classe (compartilhada entre
-    todas as instâncias/processo) e só é limpa organicamente dentro de
-    _shutdown(), que roda via QApplication.aboutToQuit -- sinal que os
-    testes não emitem. Sem isso, MainWindows de um teste vazariam pro
-    _instances visto pelo próximo teste."""
+    todas as instâncias/processo). closeEvent()/_shutdown() removem a
+    janela de lá quando fecham de verdade, mas testes que criam MainWindow
+    sem nunca chamar close() (ou que testam o closeEvent isoladamente)
+    podem deixar instâncias penduradas. Sem isso, MainWindows de um teste
+    vazariam pro _instances visto pelo próximo teste."""
     from ui.main_window import MainWindow
     before = list(MainWindow._instances)
     yield

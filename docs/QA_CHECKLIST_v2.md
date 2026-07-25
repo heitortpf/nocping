@@ -36,8 +36,9 @@ e o que ainda não foi tocado.
 - Seção 4 (redimensionamento): 12 screenshots (6 abas × 800×500/1400×900)
   em `qa_v2_evidence/resize/` — sem corte/sobreposição de texto em nenhuma.
 - Seção 5 (Ctrl+N): abre segunda janela em Quick Ping, tema herdado,
-  monitoramento independente entre janelas, alternar tema propaga — **mas
-  ver achado abaixo**.
+  monitoramento independente entre janelas, alternar tema propaga, **e o
+  achado de fechar-janela-secundária-derruba-tudo já foi corrigido** (ver
+  abaixo).
 - Seção 6 (exportação): as 8 exportações aplicáveis (Quick Ping CSV, Monitor
   CSV+JSON, HostCard "Exportar RTT", Histórico CSV, Port Scan CSV,
   Traceroute CSV, MTR CSV) geram arquivo com conteúdo correto —
@@ -53,12 +54,19 @@ e o que ainda não foi tocado.
 **Dois achados reais durante esta rodada** (não são itens que "passaram
 com ressalva" — são comportamento confirmado, precisam de uma decisão):
 
-1. **Fechar a janela secundária derruba o app inteiro.** `MainWindow.closeEvent()`
-   chama `QApplication.quit()` incondicionalmente, em qualquer instância —
-   confirmado com um `app.exec()` real (não só `processEvents()`), então não
-   é artefato do jeito de testar. É anterior a esta sessão de redesign
-   (`git log -p` mostra o método assim há várias releases). Contradiz a
-   expectativa natural de multi-janela. Ver item corrigido na Seção 5.
+1. ~~**Fechar a janela secundária derruba o app inteiro.**~~ **CORRIGIDO.**
+   `MainWindow.closeEvent()` chamava `QApplication.quit()`
+   incondicionalmente, em qualquer instância — confirmado com um
+   `app.exec()` real (não só `processEvents()`), então não era artefato do
+   jeito de testar. Era anterior a esta sessão de redesign (`git log -p`
+   mostrava o método assim há várias releases). Corrigido: `closeEvent()`
+   agora limpa os workers da própria janela, sai de `_instances`, esconde
+   o próprio ícone de bandeja, e só chama `quit()` se `_instances` ficar
+   vazia. `_shutdown()` (via `aboutToQuit`) continua cobrindo os atalhos
+   que pulam `closeEvent()` (menu "Sair", bandeja "Sair"). Validado com
+   `app.exec()` real de novo (processo externo, PID monitorado via
+   PowerShell) + `tests/test_multi_window_close.py` (10 testes). Ver
+   Seção 5.
 2. **Quick Ping não notifica em ERROR, só em DOWN/UP.** `QuickPingTab._on_error()`
    (disparado por ICMP/UDP sem admin, ou qualquer falha antes do primeiro
    resultado) não emite `host_status_changed` — só `_on_result()` faz isso,
@@ -199,25 +207,28 @@ Verificado via automação nesta rodada (`Ctrl+N` disparado de verdade via
       interferem entre si (RTT/perda não cruzam entre janelas)
 - [x] Alternar tema em uma janela (botão 🌙/☀ na barra de menu) — a outra
       janela também muda de tema junto
-- [ ] **Fechar a janela SECUNDÁRIA (X) — CONFIRMAR SE ISSO ENCERRA O APP TODO.**
-      Achado durante a automação deste checklist (verificado com
-      `app.exec()` real, não só `processEvents()`): `MainWindow.closeEvent()`
-      chama `QApplication.quit()` **incondicionalmente**, em qualquer
-      instância — não só na "principal". Num app com loop de eventos real
-      rodando, fechar a janela secundária também derruba a primeira,
-      porque não existe conceito de janela "principal" vs "secundária" no
-      código (as duas são a mesma classe `MainWindow`, e `_instances` é só
-      uma lista, sem noção de "qual é a raiz"). **Isso é anterior a esta
-      sessão de redesign** (confirmado via `git log -p` em `closeEvent`,
-      inalterado há várias releases) — não foi introduzido agora, mas
-      contradiz a expectativa natural de "multi-janela" (Ctrl+N deveria
-      abrir janelas independentes). Se ao testar manualmente isso se
-      confirmar, é um bug real a decidir se entra no escopo da v2.0.0 ou
-      fica pra depois — não um item que deveria simplesmente "passar".
-- [ ] Fechar a janela principal com a secundária ainda aberta — **o
-      processo inteiro encerra** (não é "minimizar pra bandeja"; é
-      comportamento intencional desde a v1.2.0, ver `CLAUDE.md`) e nenhuma
-      janela/ícone de bandeja fica órfã no sistema depois
+- [x] **CORRIGIDO — Fechar a janela SECUNDÁRIA (X) não encerra mais o app
+      todo.** `MainWindow.closeEvent()` agora limpa os workers só daquela
+      janela (`_cleanup_window()`, idempotente), sai de `_instances`,
+      esconde o próprio ícone de bandeja, e só chama `QApplication.quit()`
+      se `_instances` ficar vazia — ou seja, só na ÚLTIMA janela. Validado
+      com `app.exec()` real duas vezes: uma vez dentro do processo de teste
+      (janela 1 continua com host ativo — status `RUNNING` — depois de
+      fechar a janela 2) e uma vez com um processo Python externo de
+      verdade lançado via PowerShell, PID monitorado de fora — o log do
+      processo prova que o loop de eventos continuou vivo e processando
+      timers ~4s depois de fechar a secundária, só encerrando de fato ao
+      fechar a última janela. Também coberto por
+      `tests/test_multi_window_close.py` (10 testes).
+- [x] Fechar a janela principal com a secundária ainda aberta — **agora
+      só fecha aquela janela também** (não é mais "o processo inteiro
+      encerra" nesse caso — só encerra quando é a ÚLTIMA janela restante,
+      seja ela qual for). Nenhuma janela/ícone de bandeja fica órfã —
+      `_tray.hide()` roda pra cada janela fechada, e `_shutdown()` (via
+      `aboutToQuit`) limpa qualquer janela que ainda esteja em `_instances`
+      quando o app realmente encerra (cobre os atalhos "Sair" do menu/
+      bandeja, que chamam `QApplication.quit()` direto sem passar por
+      `closeEvent()` janela por janela).
 
 ---
 

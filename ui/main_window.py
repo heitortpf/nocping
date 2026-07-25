@@ -184,6 +184,7 @@ class MainWindow(QMainWindow):
             else detect_system_dark()
         )
         MainWindow._instances.append(self)
+        self._cleaned_up = False
 
         self._settings = QSettings("NOCPing", "NOCPing")
         self._notif_enabled: bool = self._settings.value(
@@ -449,13 +450,32 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event):
-        QApplication.quit()
-
-    def _shutdown(self):
+        # Fechar QUALQUER janela costumava chamar QApplication.quit()
+        # incondicionalmente (bug pré-existente, achado no QA da v2.0.0) --
+        # derrubava o app inteiro (inclusive outras janelas com hosts sendo
+        # monitorados) ao fechar uma janela secundária aberta via Ctrl+N. O
+        # app só deve encerrar de verdade quando a ÚLTIMA janela fecha.
+        self._cleanup_window()
         try:
             MainWindow._instances.remove(self)
         except ValueError:
             pass
+        self._tray.hide()
+        if not MainWindow._instances:
+            QApplication.quit()
+
+    def _cleanup_window(self):
+        """Para os workers desta janela (worker de Quick Ping, cards do
+        Monitor, e Scan/Banner/Traceroute/MTR se já inicializados).
+        Idempotente -- QWidget.close() não dispara QApplication.aboutToQuit
+        a menos que o app realmente encerre, então closeEvent() precisa
+        fazer essa limpeza por conta própria em vez de depender de
+        _shutdown(); quando o app encerra de verdade, _shutdown() chama
+        isto de novo pra cada janela ainda aberta, e o guard abaixo evita
+        repetir o trabalho na janela que já tinha se limpado sozinha."""
+        if self._cleaned_up:
+            return
+        self._cleaned_up = True
         self._quick_ping.cleanup()
         for card in self._monitor._cards:
             card.stop()
@@ -469,7 +489,25 @@ class MainWindow(QMainWindow):
         if self._mtr and self._mtr._worker and self._mtr._worker.isRunning():
             self._mtr._worker.stop()
             self._mtr._worker.wait(500)
-        # Fechar conexão SQLite do HistoryStore
+
+    def _shutdown(self):
+        """Conectado a QApplication.aboutToQuit em CADA MainWindow (ver
+        __init__) -- quando o app realmente encerra, roda uma vez por
+        janela ainda registrada em _instances. Cobre tanto o caso comum
+        (closeEvent da última janela já chamou quit(), _instances já está
+        vazia aqui) quanto atalhos que pulam closeEvent inteiramente --
+        "Sair" no menu Arquivo e "Sair" no menu da bandeja chamam
+        QApplication.quit() direto, sem fechar as janelas uma a uma."""
+        for win in list(MainWindow._instances):
+            win._cleanup_window()
+            try:
+                MainWindow._instances.remove(win)
+            except ValueError:
+                pass
+            win._tray.hide()
+        # Fechar conexão SQLite do HistoryStore (recurso global, não por
+        # janela) -- seguro chamar mais de uma vez (fila/thread/conexão já
+        # ficam vazios/encerrados após a primeira chamada).
         from core.history_store import HistoryStore
         HistoryStore.instance().close()
 
