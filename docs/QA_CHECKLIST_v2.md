@@ -48,8 +48,9 @@ e o que ainda não foi tocado.
   8 testes) + inspeção visual das 12 imagens em `screenshots/{dark,light}/`.
 - Seção 8 (notificações): DOWN/UP-após-DOWN/ERROR testados no Monitor
   (captura real de `showMessage`, não só inspeção visual), toggle
-  desliga/religa corretamente, preferência persiste via `QSettings` — **mas
-  ver achado abaixo sobre Quick Ping**.
+  desliga/religa corretamente, preferência persiste via `QSettings`, **e o
+  achado de Quick Ping não notificar em ERROR já foi corrigido** (ver
+  abaixo).
 
 **Dois achados reais durante esta rodada** (não são itens que "passaram
 com ressalva" — são comportamento confirmado, precisam de uma decisão):
@@ -67,14 +68,23 @@ com ressalva" — são comportamento confirmado, precisam de uma decisão):
    `app.exec()` real de novo (processo externo, PID monitorado via
    PowerShell) + `tests/test_multi_window_close.py` (10 testes). Ver
    Seção 5.
-2. **Quick Ping não notifica em ERROR, só em DOWN/UP.** `QuickPingTab._on_error()`
-   (disparado por ICMP/UDP sem admin, ou qualquer falha antes do primeiro
-   resultado) não emite `host_status_changed` — só `_on_result()` faz isso,
-   e só a partir da segunda mudança de status observada. O changelog da
-   v1.5.0 no README já falava só em "UP/DOWN" pra Quick Ping (não ERROR),
-   então isto pode ser escopo intencional, não bug — mas o item original
-   deste checklist assumia paridade total com o Monitor, o que estava
-   errado. Ver item corrigido na Seção 8.
+2. ~~**Quick Ping não notifica em ERROR, só em DOWN/UP.**~~ **DECISÃO: ESTENDER
+   — CORRIGIDO.** `QuickPingTab._on_error()` não emitia `host_status_changed`
+   — só `_on_result()` fazia isso, e só a partir da segunda mudança de
+   status observada. O changelog da v1.5.0 já falava só "UP/DOWN" pra Quick
+   Ping (escopo intencional na época), mas a decisão pós-QA foi estender
+   pra paridade total com o Monitor. `_on_error()` agora emite
+   `host_status_changed(host, old_status, HostStatus.ERROR)` — mesmo sinal,
+   mesmo fluxo que já existia (`MainWindow._on_host_status_changed`, sem
+   tratamento especial — as assinaturas de `QuickPingTab.host_status_changed`
+   e `MonitorTab.host_status_changed` já eram idênticas). Diferente de
+   `_on_result()`, não suprime a primeira observação como "linha de base",
+   porque um erro normalmente É a primeira (e única) coisa que acontece na
+   sessão — esperar uma segunda mudança nunca notificaria. Validado com
+   `tests/test_quick_ping_tab.py` (5 testes, incluindo um fim-a-fim com
+   `PingWorker` real em ICMP sem admin) e manualmente (captura real de
+   `showMessage()`: `"Erro no Host" / "Erro monitorando 127.0.0.1"`,
+   idêntico ao que o Monitor já mostra). Ver item corrigido na Seção 8.
 
 **Não coberto nesta rodada — precisa de humano e/ou outra plataforma:**
 Windows COM admin (precisa elevação interativa via UAC), toda a Seção 2
@@ -298,14 +308,12 @@ Pré-requisito: `Visualizar → Notificações de host` marcado (é o padrão).
 - [ ] **Quick Ping — DOWN/UP**: verificado via automação, funciona (mesma
       lógica do Monitor, só que exige uma transição de status real — a
       *primeira* leitura nunca notifica, só vira a linha de base).
-- [ ] **Quick Ping — ERROR não notifica (achado, não item a "passar").**
-      `_on_error()` do Quick Ping (ICMP/UDP sem admin, ou qualquer falha
-      antes do 1º resultado) não emite `host_status_changed` — confirmado
-      via automação (mock de `showMessage`, zero chamadas). O changelog da
-      v1.5.0 já falava só "UP/DOWN" pra Quick Ping, então isso pode ser
-      escopo intencional — mas se o comportamento esperado for paridade
-      total com o Monitor (que trata ERROR explicitamente), isto é um gap
-      a decidir se entra na v2.0.0.
+- [x] **CORRIGIDO — Quick Ping agora notifica em ERROR também.** Decisão
+      pós-QA: estender pra paridade total com o Monitor. Verificado via
+      automação (`tests/test_quick_ping_tab.py`, incluindo um `PingWorker`
+      real em ICMP sem admin) e manualmente — `showMessage()` real disparou
+      com `"Erro no Host" / "Erro monitorando 127.0.0.1"`, idêntico ao
+      Monitor pro mesmo cenário.
 - [ ] Desmarcar `Visualizar → Notificações de host` e repetir os cenários
       acima — nenhuma notificação aparece (verificado via automação pro
       Monitor; toggle + persistência via `QSettings` confirmados)

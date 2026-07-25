@@ -246,6 +246,18 @@ class QuickPingTab(QWidget):
         self._control.set_running(False)
         self._elapsed_timer.stop()
 
+        # Paridade com o Monitor (HostCard._set_status): erro de
+        # configuração/privilégio (ex. ICMP/UDP sem admin) também notifica
+        # a bandeja, não só transições DOWN/UP de _on_result(). Ao contrário
+        # de _on_result(), não suprime a primeira observação -- um erro
+        # normalmente É a primeira (e única) coisa que acontece na sessão
+        # de ping, então esperar uma "segunda mudança" nunca notificaria.
+        old_status = getattr(self, "_last_status", None)
+        if old_status != HostStatus.ERROR:
+            host = self._control.host_text()
+            self.host_status_changed.emit(host, old_status, HostStatus.ERROR)
+            self._last_status = HostStatus.ERROR
+
     def _on_finished(self, stats: dict):
         self._elapsed_timer.stop()
         self._update_elapsed()

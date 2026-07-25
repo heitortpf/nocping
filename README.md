@@ -97,6 +97,10 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
   (110 testes automatizados no total, era 77 na v1.5.0). CI
   (`.github/workflows/build.yml`) agora roda a suíte completa como gate
   antes de compilar/publicar qualquer release.
+- **Quick Ping agora notifica também em ERROR, alinhado ao Monitor** — antes
+  só alertava na bandeja para transições UP/DOWN; um erro de configuração/
+  privilégio (ex.: ICMP/UDP sem Administrador) ficava só no console da aba,
+  sem notificação, diferente do que o Monitor já fazia para o mesmo caso.
 
 ### v1.5.0
 - **Notificações Globais de Sistema** — Notificações na bandeja do sistema para todas as abas. Receba alertas automáticos de conclusão ou erro ao finalizar tarefas como Port Scan, Traceroute, Banner Grab, MTR e Quick Ping. A aba Quick Ping agora também conta com alertas ao vivo de queda ou retorno de host (UP/DOWN) durante execuções prolongadas.
