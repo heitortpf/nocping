@@ -3,4 +3,7 @@ pyqtgraph>=0.13.0
 darkdetect>=0.8.0
 qtawesome>=1.4.0
 pyinstaller>=6.0.0
+
+# Dev / testes
 pytest>=8.0.0
+pytest-qt>=4.4.0
