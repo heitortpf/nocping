@@ -352,9 +352,16 @@ pytest tests/ -v                  # completo (requer rede/admin)
 
 ### Executável local
 ```bash
-python -m PyInstaller --onefile --windowed --name NOCPing --icon NOCPing.ico --add-data "NOCPing.ico:." main.py
+python -m PyInstaller --onefile --windowed --name NOCPing --icon NOCPing.ico --collect-data qtawesome --add-data "NOCPing.ico:." main.py
 # Saída: dist/NOCPing.exe
 ```
+`--collect-data qtawesome` é obrigatório desde que `qtawesome` virou dependência
+(design system, v2.0.0) — ele carrega fontes de ícone (`.ttf`+`.json`) em
+runtime, que a análise estática do PyInstaller não detecta sozinha. Sem essa
+flag o executável builda normalmente mas crasha ao abrir
+(`ModuleNotFoundError: No module named 'qtawesome'` se a dependência também
+não estiver instalada no ambiente de build — foi o caso do binário publicado
+inicialmente como v2.0.0, corrigido antes do release final).
 
 ### GitHub Actions (`.github/workflows/build.yml`)
 Dispara ao criar uma tag `v*` (ex: `git tag v1.1.0 && git push origin v1.1.0`).

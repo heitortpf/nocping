@@ -102,7 +102,14 @@ jobs:
             libxcb-xfixes0 libxkbcommon-x11-0 libxcb-cursor0
 
       - name: Instalar dependências Python
-        run: pip install PyQt6 pyqtgraph darkdetect pyinstaller
+        # Antes instalava uma lista fixa (PyQt6 pyqtgraph darkdetect
+        # pyinstaller) que nunca foi atualizada quando qtawesome virou
+        # dependência no redesign visual -- o binário publicado da v2.0.0
+        # não tinha qtawesome instalado e crashava no primeiro import
+        # (ModuleNotFoundError: No module named 'qtawesome'). Usar
+        # requirements.txt aqui garante que build nunca mais diverge do
+        # que o app realmente declara precisar.
+        run: pip install -r requirements.txt
 
       - name: Instalar Pillow (macOS — converte .ico → .icns)
         if: runner.os == 'macOS'
@@ -117,6 +124,7 @@ jobs:
           --hidden-import PyQt6.sip
           --hidden-import darkdetect
           --hidden-import pyqtgraph
+          --collect-data qtawesome
           --add-data "NOCPing.ico:."
           main.py
 

@@ -103,7 +103,7 @@ do toast do SO).
       uma build que já falha no automatizado)
 - [ ] Build gerado via PyInstaller (não `python main.py`) — o QA final deve
       ser no executável que vai ser publicado, não no código-fonte direto:
-      `python -m PyInstaller --onefile --windowed --name NOCPing --icon NOCPing.ico --add-data "NOCPing.ico:." main.py`
+      `python -m PyInstaller --onefile --windowed --name NOCPing --icon NOCPing.ico --collect-data qtawesome --add-data "NOCPing.ico:." main.py`
 
 ---
 

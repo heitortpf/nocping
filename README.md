@@ -209,7 +209,7 @@ python main.py
 
 ```bash
 pip install pyinstaller
-python -m PyInstaller --onefile --windowed --name NOCPing --icon NOCPing.ico --add-data "NOCPing.ico:." main.py
+python -m PyInstaller --onefile --windowed --name NOCPing --icon NOCPing.ico --collect-data qtawesome --add-data "NOCPing.ico:." main.py
 # Saída: dist/NOCPing.exe  (ou NOCPing no Linux/macOS)
 ```
 
