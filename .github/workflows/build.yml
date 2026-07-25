@@ -9,7 +9,51 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Dependências de sistema (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            xvfb \
+            libgl1 libegl1 libdbus-1-3 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 \
+            libxcb-xfixes0 libxkbcommon-x11-0 libxcb-cursor0
+
+      - name: Instalar dependências Python
+        run: pip install -r requirements.txt
+
+      # Linux não tem display por padrão no runner -- os testes de UI
+      # (test_ui_navigation.py/test_ui_theme.py, via pytest-qt) instanciam
+      # MainWindow de verdade e precisam de um X server. Windows/macOS já
+      # têm display nativo no runner, então rodam pytest direto.
+      - name: Rodar testes (Linux — xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pytest tests/ -v -m "not live"
+
+      - name: Rodar testes (Windows/macOS)
+        if: runner.os != 'Linux'
+        run: pytest tests/ -v -m "not live"
+
   build:
+    needs: test
     strategy:
       fail-fast: false
       matrix:

@@ -73,7 +73,8 @@ Port Scan TCP/UDP **não** requer admin.
 
 ```
 main.py                  — entry point (carrega NOCPing.ico via QIcon)
-take_shots.py            — captura automática de screenshots das 5 abas via win32gui + PIL
+take_shots.py            — captura automática de screenshots das 6 seções (dark+light) in-process,
+                            via MainWindow.show_section()+QWidget.grab() — não usa win32gui/ImageGrab
 docs/
   PLAN-features.md       — plano de features executado na v1.1.0
   PLAN.md                — plano em aberto (proposta de status WARNING para perda de pacote isolada, ver seção Pendências)
@@ -329,7 +330,7 @@ Um socket ICMP raw recebe **todas** as respostas ICMP do sistema, não só as do
 ## Testes automatizados
 
 ```bash
-pytest tests/ -v -m "not live"   # CI-safe (77 testes)
+pytest tests/ -v -m "not live"   # CI-safe (110 testes)
 pytest tests/ -v                  # completo (requer rede/admin)
 ```
 
@@ -338,7 +339,12 @@ pytest tests/ -v                  # completo (requer rede/admin)
 - `test_history_store.py` — round-trip, ordem cronológica, last_n, clear, hosts(), thread-safety (4 threads × 50 inserts)
 - `test_rtt_utils.py` — `rtt_color` (8 boundary cases), `PRIMARY_BTN_STYLE`, `TABLE_STYLE`, `field_label`
 - `test_workers.py` — `PingWorker` stop (<200ms), sinais result/stats/loss; `ScanWorker` ports/progress/error/TCP+UDP
+- `test_ui_navigation.py` — `NavSidebar` troca o painel do `QStackedWidget` (`MainWindow._on_tab_activated`), `show_section()` sincroniza sidebar+stack, e as 4 abas lazy (Scan/Banner/Traceroute/MTR) só constroem `__init__` no primeiro clique (spy via `monkeypatch.setattr(cls, "__init__", ...)`), nunca de novo depois
+- `test_ui_theme.py` — `MainWindow._toggle_theme()` não lança exceção (com `HostCard` real incluso), propaga pra todas as `MainWindow._instances` abertas (não só a janela onde o botão foi clicado), e chama `apply_theme()` em `QuickPingTab` e em `card._graph` de cada `HostCard` do Monitor
+- `test_worker_tab_mixin.py` — `WorkerTabMixin._cleanup_worker()` desconecta sinais, chama `stop()`+`wait()` só quando `isRunning()` (modo guardado, default) ou sempre (`_WORKER_WAIT_GUARDED=False`), e é seguro chamar 2x seguidas; usa um `QThread` fake com sinais reais do PyQt6 (não `Mock`, pois testa a semântica real de `disconnect()`). **Achado durante a escrita destes testes:** o `except RuntimeError` em `_cleanup_worker()` não cobre o caso de desconectar um slot nunca conectado — o PyQt6 levanta `TypeError` nesse caso, não `RuntimeError`. Não afeta as 4 abas reais (sempre conectam os sinais antes de qualquer cleanup), mas fica pinado em `test_cleanup_swallows_disconnect_typeerror_from_unconnected_slot`
 - **Importante:** sinais Qt em testes usam `Qt.ConnectionType.DirectConnection` para evitar queued delivery sem event loop
+- **Testes de UI (`test_ui_navigation.py`, `test_ui_theme.py`) usam [pytest-qt](https://pytest-qt.readthedocs.io/)** (fixture `qtbot`) e instanciam `MainWindow` de verdade — **precisam de um display**. Em Linux headless/CI, rodar sob `xvfb-run -a pytest tests/ -v -m "not live"` (ou exportar `DISPLAY` de um `Xvfb` já iniciado); Windows/macOS não precisam disso. `qt_api = pyqt6` está fixado em `pytest.ini` para não depender de qual binding Qt está instalado. Fixtures `isolate_hosts_persistence`/`clean_main_window_instances` em `tests/conftest.py` evitam que esses testes leiam/gravem o `nocping_hosts.json` real da máquina ou vazem `MainWindow._instances` entre testes.
+- **Regressão visual:** `scripts/visual_regression.py` (fora da suíte `pytest`) roda `take_shots.py` e compara pixel a pixel contra um diretório de baseline (`--baseline-dir`, default `docs/baseline/screenshots-pre/` — pré-redesign, então sempre vai reportar diff alto; para gate de regressão futura usar `docs/redesign/screenshots-post/`), com tolerância configurável (`--tolerance`, padrão 2%) e exit code não-zero se algo passar do threshold.
 
 ---
 

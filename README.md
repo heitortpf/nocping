@@ -13,24 +13,32 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 
 ## Screenshots
 
+> Capturadas com `python take_shots.py` (in-process, ver `docs/redesign/`) —
+> `screenshots/dark/` e `screenshots/light/` têm o par completo dos dois temas
+> para as 6 seções; abaixo só o tema escuro, como amostra.
+
+### Quick Ping
+![Quick Ping](screenshots/dark/quick_ping.png)
+> Tela inicial — ping rápido de host único (TCP/ICMP/UDP), gráfico RTT, console de log e stats em tempo real.
+
 ### Monitor de Hosts
-![Monitor](screenshots/monitor.png)
+![Monitor](screenshots/dark/monitor.png)
 > Monitoramento em tempo real com gráfico de RTT, estatísticas e exportação CSV/JSON.
 
 ### Port Scan
-![Port Scan](screenshots/portscan.png)
+![Port Scan](screenshots/dark/portscan.png)
 > Varredura TCP/UDP com progresso em tempo real, presets e suporte a UDP open|filtered.
 
 ### Banner Grab / TLS
-![Banner TLS](screenshots/banner.png)
+![Banner TLS](screenshots/dark/banner.png)
 > Inspeção de banner HTTP e detalhes do certificado TLS/SSL.
 
 ### Traceroute
-![Traceroute](screenshots/traceroute.png)
+![Traceroute](screenshots/dark/traceroute.png)
 > Traceroute ICMP com resolução DNS reversa por hop.
 
 ### MTR — My TraceRoute
-![MTR](screenshots/mtr.png)
+![MTR](screenshots/dark/mtr.png)
 > Traceroute contínuo com estatísticas acumuladas por hop: loss%, sent, last/avg/best/worst/stdev RTT.
 
 ---
@@ -57,6 +65,38 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 ---
 
 ## Changelog
+
+### v2.0.0
+- **Redesign visual completo** — novo design system (`ui/theme/tokens.py` +
+  `ui/theme/components.py`): paleta, espaçamento, tipografia e componentes
+  reutilizáveis (cards, botões, badges de status) centralizados numa única
+  fonte de verdade, substituindo QSS inline duplicado entre abas. Todas as 6
+  seções (Quick Ping, Monitor, Port Scan, Banner/TLS, Traceroute, MTR) foram
+  redesenhadas em cima dele, com ícones via `qtawesome`.
+- **Navegação por sidebar** — a barra de abas no topo (`QTabWidget`) foi
+  substituída por uma sidebar vertical (`NavSidebar` + `QStackedWidget`),
+  preservando lazy-loading (Scan/Banner/Traceroute/MTR só inicializam no
+  primeiro clique), `Ctrl+N`, sincronização de tema entre janelas e o
+  encerramento limpo do processo.
+- **Refatoração estrutural** — `quick_ping_tab.py` foi quebrada em widgets
+  dedicados (`quick_ping_control_panel.py`, `quick_ping_graph_panel.py`,
+  `quick_ping_console.py`, `quick_ping_stats_panel.py`); a lógica de
+  shutdown de worker, quase idêntica entre Scan/Banner/Traceroute/MTR, virou
+  um mixin único (`WorkerTabMixin`); `main_window.py` ganhou
+  `show_section()` como API única de navegação programática.
+- **Otimizações de performance** — renderização do Port Scan em lotes
+  (`QTimer` 10Hz, mesmo padrão do throttle do gráfico de RTT) com limite de
+  5000 linhas na tabela ao vivo para o preset "Todas (1-65535)", que antes
+  podia travar a UI por ~70s num scan UDP com muitas portas
+  "open\|filtered" — CSV de exportação continua com o resultado completo,
+  sem truncar. Ver `docs/PERFORMANCE.md` para a auditoria completa (profiling
+  do Monitor com 50 hosts, confirmação do throttle de 10 FPS do `RttGraph`).
+- **Testes de UI novos** — 33 testes com [pytest-qt](https://pytest-qt.readthedocs.io/)
+  cobrindo navegação da sidebar + lazy-loading, troca de tema propagando pra
+  todas as janelas abertas, e o contrato de cleanup do `WorkerTabMixin`
+  (110 testes automatizados no total, era 77 na v1.5.0). CI
+  (`.github/workflows/build.yml`) agora roda a suíte completa como gate
+  antes de compilar/publicar qualquer release.
 
 ### v1.5.0
 - **Notificações Globais de Sistema** — Notificações na bandeja do sistema para todas as abas. Receba alertas automáticos de conclusão ou erro ao finalizar tarefas como Port Scan, Traceroute, Banner Grab, MTR e Quick Ping. A aba Quick Ping agora também conta com alertas ao vivo de queda ou retorno de host (UP/DOWN) durante execuções prolongadas.
@@ -174,7 +214,51 @@ pytest tests/ -v -m "not live"
 pytest tests/ -v
 ```
 
-77 testes automatizados cobrindo `core/network`, `core/config_store`, `core/history_store`, `ui/widgets/_utils` e QThread workers.
+110 testes automatizados: `core/network`, `core/config_store`, `core/history_store`,
+`ui/widgets/_utils` e QThread workers (77), mais cobertura de UI via
+[pytest-qt](https://pytest-qt.readthedocs.io/) (33) — navegação da sidebar e
+lazy-loading das abas Scan/Banner/Traceroute/MTR (`test_ui_navigation.py`),
+troca de tema claro/escuro (`test_ui_theme.py`) e o cleanup de workers do
+`WorkerTabMixin` (`test_worker_tab_mixin.py`).
+
+### Testes de UI (pytest-qt)
+
+Os testes que usam o fixture `qtbot` (`test_ui_navigation.py`, `test_ui_theme.py`)
+instanciam janelas Qt de verdade e **precisam de um display** — não rodam
+"headless" por padrão. Localmente (Windows/macOS/Linux com sessão gráfica)
+não é preciso nada além de `pip install -r requirements.txt`; os testes já
+rodam junto com `pytest tests/ -v -m "not live"`.
+
+Em CI Linux (ou qualquer ambiente sem display, ex. servidor sem GUI), rode
+sob um X server virtual com [xvfb](https://www.x.org/releases/X11R7.6/doc/man/man1/Xvfb.1.xhtml):
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install -y xvfb
+xvfb-run -a pytest tests/ -v -m "not live"
+
+# ou manualmente, numa sessão separada:
+Xvfb :99 -screen 0 1280x800x24 &
+export DISPLAY=:99
+pytest tests/ -v -m "not live"
+```
+
+Windows e macOS têm um servidor de display sempre disponível (mesmo em
+runner de CI headless o Qt usa o compositor nativo), então `xvfb-run` só é
+necessário no Linux.
+
+### Regressão visual
+
+`scripts/visual_regression.py` roda `take_shots.py` e compara as capturas
+pixel a pixel contra um diretório de baseline, com tolerância configurável:
+
+```bash
+python scripts/visual_regression.py --baseline-dir docs/redesign/screenshots-post
+```
+
+Não é um teste `pytest` (não roda junto com a suíte) — é uma ferramenta
+separada para detectar regressões visuais entre uma sessão de trabalho e a
+próxima. Requer display pela mesma razão dos testes de UI acima.
 
 ---
 
@@ -207,6 +291,11 @@ tests/
   test_history_store.py
   test_rtt_utils.py
   test_workers.py
+  test_ui_navigation.py   — sidebar + lazy-loading das abas (pytest-qt)
+  test_ui_theme.py        — troca de tema claro/escuro (pytest-qt)
+  test_worker_tab_mixin.py — cleanup de workers (WorkerTabMixin)
+scripts/
+  visual_regression.py    — diff pixel a pixel de screenshots contra um baseline
 ```
 
 ---
