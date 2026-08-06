@@ -3,13 +3,15 @@ NOCPing — ui/main_window.py
 Janela principal com abas, menu e barra de status.
 """
 import base64
+import os
+import sys
 
 from PyQt6.QtWidgets import (
     QMainWindow, QStackedWidget, QWidget, QHBoxLayout,
     QLabel, QMessageBox, QPushButton, QApplication, QFileDialog,
     QSystemTrayIcon,
 )
-from PyQt6.QtCore import QSettings, QByteArray, QBuffer, QIODevice
+from PyQt6.QtCore import QSettings, QByteArray, QBuffer, QIODevice, QTimer
 from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QAction, QPalette, QColor, QPainter, QPixmap, QPolygonF
 
@@ -20,6 +22,51 @@ from .theme.components import count_badge
 from .widgets.tray import SystemTray
 from .widgets.sidebar import NavSidebar
 from core.network import is_admin
+
+_ICON_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "NOCPing.ico")
+
+
+def _force_native_taskbar_icon(win: QMainWindow) -> None:
+    """Define o HICON da janela via WM_SETICON direto pela API do Windows,
+    contornando QIcon/QApplication.setWindowIcon()/QWidget.setWindowIcon().
+
+    Descoberto numa sessão real de troubleshooting: numa instalação Windows
+    específica, nem `app.setWindowIcon()` (main.py) nem `self.setWindowIcon()`
+    (MainWindow.__init__) faziam o ícone da janela RODANDO (não fixada) na
+    barra de tarefas aparecer certo -- ficava genérico -- mesmo com o
+    `NOCPing.ico` correto (6 resoluções, 16 a 256px) e o recurso de ícone do
+    próprio `.exe` corretos (confirmado fixando o app na barra de tarefas,
+    que extrai o ícone direto do arquivo e mostrava certo). Ou seja, o
+    recurso está certo, é especificamente a associação em runtime via Qt que
+    não pegava nesse ambiente. `WM_SETICON` é o mecanismo Win32 de mais
+    baixo nível pra isso -- deveria ser a fonte da verdade que a barra de
+    tarefas usa, então serve de rede de segurança quando os caminhos normais
+    do Qt falham silenciosamente por algum motivo específico do ambiente.
+
+    Chamado via QTimer.singleShot(0, ...) no fim de MainWindow.__init__ (ver
+    abaixo) -- precisa que a janela já tenha um HWND nativo (winId() força
+    a criação se ainda não existir, mas rodar após o primeiro show() real é
+    mais seguro que confiar nisso). Não-Windows: no-op."""
+    if sys.platform != "win32":
+        return
+    if not os.path.exists(_ICON_PATH):
+        return
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        WM_SETICON = 0x0080
+        ICON_SMALL, ICON_BIG = 0, 1
+        IMAGE_ICON = 1
+        LR_LOADFROMFILE = 0x00000010
+        hwnd = int(win.winId())
+        h_small = user32.LoadImageW(0, _ICON_PATH, IMAGE_ICON, 16, 16, LR_LOADFROMFILE)
+        h_big = user32.LoadImageW(0, _ICON_PATH, IMAGE_ICON, 32, 32, LR_LOADFROMFILE)
+        if h_small:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, h_small)
+        if h_big:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, h_big)
+    except Exception:
+        pass
 
 
 def _palette_dict(t: ColorTokens) -> dict:
@@ -175,6 +222,17 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NOCPing")
+        # QApplication.setWindowIcon() (main.py) já cobre isto como padrão
+        # herdado por qualquer QWidget sem ícone próprio -- normalmente
+        # basta. Setar aqui também, explicitamente na instância da janela,
+        # é defensivo: a resolução de ícone da barra de tarefas do Windows
+        # às vezes usa o ícone de classe/janela (WM_SETICON) em vez do
+        # default de QApplication, especialmente rodando via `python
+        # main.py` (não o .exe compilado) -- não custa nada garantir os
+        # dois caminhos.
+        app = QApplication.instance()
+        if app is not None and not app.windowIcon().isNull():
+            self.setWindowIcon(app.windowIcon())
         self.resize(1100, 700)
         self.setMinimumSize(800, 500)
 
@@ -197,6 +255,12 @@ class MainWindow(QMainWindow):
         self._build_tray()
         self._apply_window_theme()
         QApplication.instance().aboutToQuit.connect(self._shutdown)
+
+        # QTimer.singleShot(0, ...) em vez de chamar direto: garante que o
+        # HWND nativo já existe (winId() força a criação, mas só depois que
+        # o Qt processar o primeiro evento de show/paint é seguro supor que
+        # a barra de tarefas já criou o botão pra essa janela).
+        QTimer.singleShot(0, lambda: _force_native_taskbar_icon(self))
 
     def _build_menu(self):
         menu = self.menuBar()

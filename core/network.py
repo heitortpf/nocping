@@ -8,6 +8,7 @@ import socket
 import struct
 import select
 import ssl
+import subprocess
 import sys
 import time
 import threading
@@ -35,6 +36,64 @@ def is_admin() -> bool:
         else:
             _admin_cache = (os.getuid() == 0)
     return _admin_cache
+
+
+# ---------------------------------------------------------------------------
+# Firewall — regra de entrada ICMPv4 Time Exceeded (Windows)
+# ---------------------------------------------------------------------------
+
+_ICMP_FIREWALL_RULE_NAME = "NOCPing - ICMPv4 Time Exceeded (MTR/Traceroute)"
+_firewall_rule_ensured = False
+
+
+def ensure_icmp_time_exceeded_firewall_rule() -> None:
+    """O conjunto de regras padrão do Firewall do Windows libera entrada de
+    ICMPv6 Time Exceeded, mas não tem equivalente pra ICMPv4 (tipo 11) —
+    faltando essa regra, qualquer coisa que manda ICMP por raw socket (é o
+    caso do NOCPing) tem a resposta dos roteadores intermediários descartada
+    pelo firewall antes de chegar no socket. MTR/Traceroute então só recebem
+    o salto final (Echo Reply, que tem regra própria já liberada por
+    padrão), mostrando "* * *" em todos os saltos anteriores -- sintoma
+    reproduzido e diagnosticado numa sessão real (rede Wi-Fi nova
+    classificada como "Pública"; ver README.md, seção "MTR/Traceroute só
+    mostra o salto final"). `tracert`/`ping` nativos do Windows não sofrem
+    disso porque usam a API ICMP.SYS, que não passa pela mesma avaliação de
+    regras que um raw socket.
+
+    Chamado por MTRWorker/TracerouteWorker logo após confirmar is_admin() —
+    criar regra de firewall exige admin, e essas duas telas já exigem admin
+    pra rodar mesmo, então não há elevação extra envolvida. `netsh` (não
+    PowerShell) por já vir em qualquer Windows sem depender de política de
+    execução de script; delete-then-add em vez de checar existência antes
+    porque a saída de "regra não encontrada" do netsh é dependente de
+    localidade (varia PT-BR/EN-US), então checar por string seria frágil --
+    apagar uma regra que não existe é inofensivo (netsh só reporta "nenhuma
+    regra encontrada" e segue).
+
+    Silenciosamente ignora qualquer falha (rede corporativa restringindo
+    `netsh`, alguma política de grupo, timeout) -- isto é só uma tentativa
+    de conveniência, nunca deve impedir MTR/Traceroute de rodar; o usuário
+    ainda pode aplicar a regra manualmente (README.md tem o comando)."""
+    global _firewall_rule_ensured
+    if _firewall_rule_ensured or os.name != "nt":
+        return
+    _firewall_rule_ensured = True  # tenta no máximo uma vez por processo
+
+    CREATE_NO_WINDOW = 0x08000000  # evita flash de janela de console num app --windowed
+    try:
+        subprocess.run(
+            ["netsh", "advfirewall", "firewall", "delete", "rule",
+             f"name={_ICMP_FIREWALL_RULE_NAME}"],
+            capture_output=True, timeout=5, creationflags=CREATE_NO_WINDOW,
+        )
+        subprocess.run(
+            ["netsh", "advfirewall", "firewall", "add", "rule",
+             f"name={_ICMP_FIREWALL_RULE_NAME}", "dir=in", "action=allow",
+             "protocol=icmpv4:11,any"],
+            capture_output=True, timeout=5, creationflags=CREATE_NO_WINDOW,
+        )
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ from .models import PingResult, ProbeConfig, ProbeMode, IPVersion
 from .network import (
     resolve_host, tcp_ping_once, icmp_ping_once, udp_ping_once,
     scan_ports, banner_grab, _parse_ports, calc_stats, is_admin,
-    traceroute_hop,
+    traceroute_hop, ensure_icmp_time_exceeded_firewall_rule,
 )
 
 # PID ICMP único por worker (não por thread OS — o Windows recicla thread IDs
@@ -215,6 +215,8 @@ class TracerouteWorker(QThread):
             )
             return
 
+        ensure_icmp_time_exceeded_firewall_rule()
+
         try:
             family, ip = resolve_host(self.host, 0, self.ip_version)
         except OSError as e:
@@ -286,6 +288,9 @@ class MTRWorker(QThread):
         if not is_admin():
             self.error.emit("MTR requer privilégios de Administrador (raw socket ICMP).")
             return
+
+        ensure_icmp_time_exceeded_firewall_rule()
+
         try:
             family, ip = resolve_host(self.host, 0, self.ip_version)
         except OSError as e:

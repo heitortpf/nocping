@@ -5,9 +5,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import core.network as network
 from core.network import (
     _parse_ports, _build_icmp_echo, _checksum, is_admin,
-    _get_udp_payload, calc_stats,
+    _get_udp_payload, calc_stats, ensure_icmp_time_exceeded_firewall_rule,
 )
 from core.models import PingResult
 
@@ -108,6 +109,40 @@ def test_ping_result_success_with_rtt():
 def test_is_admin_returns_bool():
     result = is_admin()
     assert isinstance(result, bool)
+
+
+# ---------------------------------------------------------------------------
+# ensure_icmp_time_exceeded_firewall_rule
+# ---------------------------------------------------------------------------
+
+def test_ensure_icmp_firewall_rule_noop_on_non_windows(monkeypatch):
+    monkeypatch.setattr(network, "_firewall_rule_ensured", False)
+    monkeypatch.setattr(network.os, "name", "posix")
+    calls = []
+    monkeypatch.setattr(network.subprocess, "run", lambda *a, **k: calls.append(a))
+    ensure_icmp_time_exceeded_firewall_rule()
+    assert calls == []
+
+
+def test_ensure_icmp_firewall_rule_runs_once_per_process(monkeypatch):
+    monkeypatch.setattr(network, "_firewall_rule_ensured", False)
+    monkeypatch.setattr(network.os, "name", "nt")
+    calls = []
+    monkeypatch.setattr(network.subprocess, "run", lambda *a, **k: calls.append(a))
+    ensure_icmp_time_exceeded_firewall_rule()
+    ensure_icmp_time_exceeded_firewall_rule()  # segunda chamada não deve rodar netsh de novo
+    assert len(calls) == 2  # netsh delete + netsh add, só na primeira vez
+
+
+def test_ensure_icmp_firewall_rule_swallows_exceptions(monkeypatch):
+    monkeypatch.setattr(network, "_firewall_rule_ensured", False)
+    monkeypatch.setattr(network.os, "name", "nt")
+
+    def _raise(*a, **k):
+        raise OSError("netsh indisponível")
+
+    monkeypatch.setattr(network.subprocess, "run", _raise)
+    ensure_icmp_time_exceeded_firewall_rule()  # não deve levantar
 
 
 # ---------------------------------------------------------------------------

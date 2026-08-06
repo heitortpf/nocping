@@ -66,6 +66,32 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 
 ## Changelog
 
+### v2.0.1
+- **Fix: MTR/Traceroute só mostrava o salto final** — em instalações Windows
+  onde a rede está classificada como "Pública", falta por padrão a regra de
+  entrada do Firewall liberando ICMPv4 Time Exceeded (existe pra ICMPv6, não
+  pra IPv4); sem ela, a resposta dos roteadores intermediários era
+  descartada antes de chegar no raw socket, e só o Echo Reply do salto final
+  (que tem regra própria) aparecia. `TracerouteWorker`/`MTRWorker` agora
+  criam essa regra automaticamente via `netsh` assim que confirmam
+  privilégio de Administrador (que essas telas já exigem pra rodar) — sem
+  fricção nenhuma pro usuário, e falha sempre silenciosa se o `netsh` não
+  puder rodar por algum motivo.
+- **Fix: ícone da barra de tarefas genérico em algumas instalações Windows**
+  — nem `QApplication.setWindowIcon()` nem `QWidget.setWindowIcon()` (os
+  dois caminhos normais do Qt) garantiam o ícone certo pra janela **rodando**
+  (diferente do atalho fixado, que extrai o ícone direto do `.exe` e sempre
+  mostrava certo). `MainWindow` agora também define o ícone via `WM_SETICON`
+  direto pela API do Windows como rede de segurança.
+- **Documentação:** seção nova no README sobre o falso-positivo do Windows
+  Defender em builds PyInstaller `--onefile` não assinados (não tem fix de
+  código — é inerente a executável não assinado), com o procedimento de
+  exclusão manual.
+- Build: `--noupx` no PyInstaller (remove uma variável a mais de
+  falso-positivo de antivírus; os runners do GitHub Actions já não tinham
+  UPX instalado, então isto é sobretudo defensivo pra não depender disso no
+  futuro).
+
 ### v2.0.0
 - **Redesign visual completo** — novo design system (`ui/theme/tokens.py` +
   `ui/theme/components.py`): paleta, espaçamento, tipografia e componentes
@@ -183,6 +209,48 @@ sudo ./NOCPing-macOS
 
 > **Nota:** TCP Port Scan funciona sem privilégios em todos os sistemas.
 
+### ⚠ Windows Defender / SmartScreen marcando como vírus
+
+`NOCPing-Windows.exe` é um executável **não assinado digitalmente** gerado
+pelo PyInstaller em modo `--onefile` (ele se auto-extrai numa pasta temporária
+ao rodar — um padrão de comportamento que os heurísticos de antivírus
+associam a malware). É um falso-positivo extremamente comum em qualquer
+projeto Python empacotado dessa forma, não algo específico do NOCPing.
+
+Se o Windows colocar o `.exe` em quarentena ao baixar:
+
+1. Abra **Segurança do Windows → Proteção contra vírus e ameaças → Proteção
+   contra vírus e ameaças → Gerenciar configurações → Adicionar ou remover
+   exclusões → Adicionar uma exclusão → Arquivo**, e aponte para o
+   `NOCPing-Windows.exe` baixado (ou numa janela **PowerShell como
+   Administrador**):
+   ```powershell
+   Add-MpPreference -ExclusionPath "$env:USERPROFILE\Downloads\NOCPing-Windows.exe"
+   ```
+2. Restaure o arquivo da quarentena (**Histórico de proteção** na mesma tela).
+3. Opcional: [reporte como falso-positivo pra Microsoft](https://www.microsoft.com/en-us/wdsi/filesubmission) — não resolve na hora, mas ajuda a limpar a detecção nas definições futuras de todo mundo.
+
+### ⚠ MTR/Traceroute só mostra o salto final ("* * *" nos saltos intermediários)
+
+Não é bug do NOCPing — é uma regra de entrada que falta no **Firewall do
+Windows** quando a rede está classificada como **Pública** (comum ao
+conectar numa Wi-Fi/rede nova pela primeira vez). O Windows tem, por padrão,
+uma regra de entrada liberando **ICMPv6** Time Exceeded, mas **não** a
+equivalente pra **ICMPv4** (tipo 11) — então qualquer ferramenta que manda
+ICMP por raw socket (inclusive o NOCPing) tem a resposta dos roteadores
+intermediários descartada pelo firewall antes de chegar no app. O `tracert`
+nativo do Windows não é afetado porque usa a API interna `ICMP.SYS`, que não
+passa pela mesma avaliação de regras.
+
+**Diagnóstico:** `Get-NetFirewallRule -Direction Inbound | Where DisplayName -match "ICMP"`
+— se não tiver nenhuma regra de entrada pra `ICMPv4`/tipo `11` habilitada
+pro perfil da sua rede, é isso.
+
+**Fix**, numa janela **PowerShell como Administrador**:
+```powershell
+New-NetFirewallRule -DisplayName "ICMPv4 Time Exceeded (Entrada)" -Direction Inbound -Protocol ICMPv4 -IcmpType 11 -Action Allow -Profile Any
+```
+
 ---
 
 ## Instalar via código-fonte
@@ -209,7 +277,7 @@ python main.py
 
 ```bash
 pip install pyinstaller
-python -m PyInstaller --onefile --windowed --name NOCPing --icon NOCPing.ico --collect-data qtawesome --add-data "NOCPing.ico:." main.py
+python -m PyInstaller --onefile --windowed --noupx --name NOCPing --icon NOCPing.ico --collect-data qtawesome --add-data "NOCPing.ico:." main.py
 # Saída: dist/NOCPing.exe  (ou NOCPing no Linux/macOS)
 ```
 

@@ -116,9 +116,17 @@ jobs:
         run: pip install Pillow
 
       - name: Build executável
+        # --noupx: binário empacotado com compressão UPX é um dos
+        # heurísticos mais comuns de falso-positivo de antivírus em
+        # executáveis PyInstaller; os runners do GitHub Actions não têm UPX
+        # instalado hoje (então isto já era um no-op na prática), mas fica
+        # explícito para não depender de o runner ganhar UPX no futuro. Não
+        # elimina o alerta do Windows Defender sozinho (ver README.md,
+        # seção "Windows Defender / SmartScreen") -- a causa raiz é o
+        # executável não ser assinado digitalmente.
         run: >
           python -m PyInstaller
-          --onefile --windowed
+          --onefile --windowed --noupx
           --name NOCPing
           --icon NOCPing.ico
           --hidden-import PyQt6.sip
