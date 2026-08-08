@@ -15,7 +15,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QRect, QSize, QPoint, QTimer
 from core.models import ProbeConfig, ProbeMode, IPVersion, HostStatus
 from core.config_store import save_hosts, load_hosts
 from .widgets.host_card import HostCard
-from .widgets._utils import field_label as _lbl
+from .widgets._utils import field_label as _lbl, parse_host_port
 from .theme.tokens import DARK, SPACING, RADIUS
 from .theme.components import card_frame, primary_button, secondary_button, danger_button
 from .widgets._reflow_row import ReflowRow
@@ -172,6 +172,13 @@ class MonitorTab(QWidget):
         if not host:
             self._inp_host.setFocus()
             return
+        host, port = parse_host_port(host)
+        if port is not None:
+            # "host:porta" (ex: 8.8.8.8:53) — preenche porta+TCP automático
+            self._inp_port.setValue(port)
+            idx = self._cmb_mode.findData(ProbeMode.TCP)
+            if idx >= 0:
+                self._cmb_mode.setCurrentIndex(idx)
         cfg = ProbeConfig(
             host=host,
             port=self._inp_port.value(),

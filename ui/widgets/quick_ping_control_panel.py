@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal
 
 from core.models import ProbeConfig, ProbeMode, IPVersion
-from ._utils import field_label as _lbl
+from ._utils import field_label as _lbl, parse_host_port
 from ..theme.tokens import SPACING
 from ..theme.components import primary_button, secondary_button, toggle_link_button
 
@@ -172,7 +172,19 @@ class QuickPingControlPanel(QFrame):
     # ------------------------------------------------------------------
 
     def host_text(self) -> str:
-        return self._inp_host.text().strip()
+        raw = self._inp_host.text().strip()
+        host, port = parse_host_port(raw)
+        if port is not None:
+            # "host:porta" (ex: 1.1.1.1:53) — preenche porta+TCP automático
+            # e revela a seção Avançado pra dar feedback visual do que mudou.
+            self._inp_host.setText(host)
+            self._inp_port.setValue(port)
+            idx = self._cmb_mode.findData(ProbeMode.TCP)
+            if idx >= 0:
+                self._cmb_mode.setCurrentIndex(idx)
+            if not self._btn_advanced.isChecked():
+                self._btn_advanced.setChecked(True)
+        return host
 
     def focus_host(self):
         self._inp_host.setFocus()

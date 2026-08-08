@@ -66,6 +66,21 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 
 ## Changelog
 
+### v2.0.2
+- **Auto-preenchimento de host:porta no Quick Ping e no Monitor** — digitar
+  `1.1.1.1:53`, `8.8.8.8:53` ou `172.217.30.227:443` no campo de host separa
+  automaticamente o IP/hostname da porta, seleciona o protocolo TCP e (no
+  Quick Ping) inicia o teste direto ao apertar Enter. Endereços IPv6 puros
+  (ex: `2001:4860:4860::8888`, com múltiplos `:`) nunca são confundidos com
+  essa sintaxe — o parser (`ui/widgets/_utils.py::parse_host_port`) só
+  reconhece exatamente um `:` seguido de um número de porta válido
+  (1-65535).
+- **Documentação:** seção nova no README sobre o erro "Uma política de
+  Controle de Aplicativo bloqueou este arquivo" — causado pela Mark of the
+  Web que todo download da internet recebe, resolvido com "Desbloquear" nas
+  Propriedades do arquivo ou `Unblock-File` no PowerShell (diferente do
+  falso-positivo do Windows Defender documentado na v2.0.1).
+
 ### v2.0.1
 - **Fix: MTR/Traceroute só mostrava o salto final** — em instalações Windows
   onde a rede está classificada como "Pública", falta por padrão a regra de
@@ -229,6 +244,25 @@ Se o Windows colocar o `.exe` em quarentena ao baixar:
    ```
 2. Restaure o arquivo da quarentena (**Histórico de proteção** na mesma tela).
 3. Opcional: [reporte como falso-positivo pra Microsoft](https://www.microsoft.com/en-us/wdsi/filesubmission) — não resolve na hora, mas ajuda a limpar a detecção nas definições futuras de todo mundo.
+
+### ⚠ "Uma política de Controle de Aplicativo bloqueou este arquivo"
+
+Erro diferente do Defender acima — é o Windows barrando pela **Mark of the
+Web** (a marca que todo arquivo baixado da internet recebe automaticamente,
+independente de antivírus). Excluir do Defender não resolve isso; precisa
+remover a marca do próprio arquivo:
+
+- Clique direito no `NOCPing-Windows.exe` → **Propriedades** → marque
+  **"Desbloquear"** no rodapé da aba Geral → **OK**; ou, no PowerShell:
+  ```powershell
+  Unblock-File -Path "C:\caminho\pra\NOCPing-Windows.exe"
+  ```
+- Se o `.exe` já estiver fixado na barra de tarefas, desfixe e fixe de novo
+  depois de desbloquear (o atalho aponta pro arquivo, então o fix já vale
+  automaticamente na próxima vez que abrir).
+
+Acontece de novo a cada `.exe` novo baixado do GitHub — é assim que o
+Windows trata qualquer download da internet, não é específico do NOCPing.
 
 ### ⚠ MTR/Traceroute só mostra o salto final ("* * *" nos saltos intermediários)
 
