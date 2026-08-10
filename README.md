@@ -415,4 +415,4 @@ scripts/
 
 ## Licença
 
-MIT
+[MIT](LICENSE) © 2026 Heitor Tomé
