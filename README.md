@@ -274,6 +274,30 @@ remover a marca do próprio arquivo:
 Acontece de novo a cada `.exe` novo baixado do GitHub — é assim que o
 Windows trata qualquer download da internet, não é específico do NOCPing.
 
+### ⚠ "O Controle de Aplicativos Inteligente bloqueou um aplicativo"
+
+Diferente dos dois erros acima — este é o **Smart App Control** (Windows
+11), um recurso baseado em **reputação na nuvem da Microsoft**, não em
+antivírus nem em Mark of the Web. Ele bloqueia qualquer executável sem
+editor verificado (sem assinatura digital reconhecida), independente de
+exclusão no Defender ou de `Unblock-File` — nenhum dos dois resolve isso.
+
+Não existe uma forma de liberar um arquivo específico (não tem "exceção" por
+app, ao contrário do Defender). As opções são:
+
+1. **Rodar a partir do código-fonte** (`python main.py`, ver seção "Instalar
+   via código-fonte" abaixo) — contorna o problema, já que quem executa é o
+   interpretador Python, não um `.exe` novo sem reputação.
+2. **Assinar o executável digitalmente** — é a correção definitiva; sem
+   assinatura, o Controle de Aplicativos Inteligente praticamente nunca vai
+   confiar no binário. Ver `CLAUDE.md` (seção "Pendências") para o plano de
+   assinatura em andamento via [SignPath.io](https://signpath.io).
+3. Desligar o Controle de Aplicativos Inteligente (Configurações →
+   Privacidade e segurança → Segurança do Windows → Controle de aplicativo e
+   navegador) resolveria, mas **não é recomendado**: uma vez desligado, a
+   Microsoft não permite religar sem reinstalar o Windows, e isso reduz a
+   proteção do sistema inteiro, não só pro NOCPing.
+
 ### ⚠ MTR/Traceroute só mostra o salto final ("* * *" nos saltos intermediários)
 
 Não é bug do NOCPing — é o **Firewall do Windows** descartando a resposta
