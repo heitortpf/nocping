@@ -131,7 +131,7 @@ def test_ensure_icmp_firewall_rule_runs_once_per_process(monkeypatch):
     monkeypatch.setattr(network.subprocess, "run", lambda *a, **k: calls.append(a))
     ensure_icmp_time_exceeded_firewall_rule()
     ensure_icmp_time_exceeded_firewall_rule()  # segunda chamada não deve rodar netsh de novo
-    assert len(calls) == 2  # netsh delete + netsh add, só na primeira vez
+    assert len(calls) == 4  # (netsh delete + netsh add) x 2 regras (v4 e v6), só na primeira vez
 
 
 def test_ensure_icmp_firewall_rule_swallows_exceptions(monkeypatch):

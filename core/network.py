@@ -39,26 +39,45 @@ def is_admin() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Firewall — regra de entrada ICMPv4 Time Exceeded (Windows)
+# Firewall — regras de entrada ICMP Time Exceeded (Windows)
 # ---------------------------------------------------------------------------
 
-_ICMP_FIREWALL_RULE_NAME = "NOCPing - ICMPv4 Time Exceeded (MTR/Traceroute)"
+_ICMP_FIREWALL_RULES = {
+    "v4": ("NOCPing - ICMPv4 Time Exceeded (MTR/Traceroute)", "icmpv4:11,any"),
+    "v6": ("NOCPing - ICMPv6 Time Exceeded (MTR/Traceroute)", "icmpv6:3,any"),
+}
 _firewall_rule_ensured = False
 
 
 def ensure_icmp_time_exceeded_firewall_rule() -> None:
-    """O conjunto de regras padrão do Firewall do Windows libera entrada de
-    ICMPv6 Time Exceeded, mas não tem equivalente pra ICMPv4 (tipo 11) —
-    faltando essa regra, qualquer coisa que manda ICMP por raw socket (é o
-    caso do NOCPing) tem a resposta dos roteadores intermediários descartada
-    pelo firewall antes de chegar no socket. MTR/Traceroute então só recebem
-    o salto final (Echo Reply, que tem regra própria já liberada por
-    padrão), mostrando "* * *" em todos os saltos anteriores -- sintoma
-    reproduzido e diagnosticado numa sessão real (rede Wi-Fi nova
-    classificada como "Pública"; ver README.md, seção "MTR/Traceroute só
-    mostra o salto final"). `tracert`/`ping` nativos do Windows não sofrem
-    disso porque usam a API ICMP.SYS, que não passa pela mesma avaliação de
-    regras que um raw socket.
+    """Nenhum dos dois conjuntos de regras padrão do Firewall do Windows
+    (ICMPv4 nem ICMPv6) libera entrada de Time Exceeded pra um raw socket de
+    aplicação comum -- faltando uma regra própria, qualquer coisa que manda
+    ICMP por raw socket (é o caso do NOCPing) tem a resposta dos roteadores
+    intermediários descartada pelo firewall antes de chegar no socket.
+    MTR/Traceroute então só recebem o salto final (Echo Reply, que tem regra
+    própria já liberada por padrão), mostrando "* * *" em todos os saltos
+    anteriores.
+
+    Achado em duas sessões reais de troubleshooting:
+    - **ICMPv4**: não existe NENHUMA regra embutida pra Time Exceeded
+      (tipo 11) -- reproduzido numa rede Wi-Fi nova classificada como
+      "Pública" (ver README.md, seção "MTR/Traceroute só mostra o salto
+      final").
+    - **ICMPv6**: existe sim uma regra embutida ("Rede Principal - Tempo
+      Excedido (ICMPv6-In)", tipo 3) e ela fica habilitada -- mas com escopo
+      `Program: System`. Ou seja, só libera a mensagem pra tráfego do
+      próprio processo do kernel do Windows, não pra um processo comum
+      (Python/NOCPing) abrindo raw socket -- ficou parecendo "IPv6 já
+      funciona por padrão" até alguém de fato testar MTR contra um destino
+      que resolve IPv6, quando o mesmo sintoma do IPv4 apareceu de novo
+      (confirmado com `Get-NetFirewallApplicationFilter` na regra embutida
+      numa sessão real; `tracert -6` funciona porque usa a API ICMP.SYS, que
+      roda como `System` e cai dentro do escopo dessa regra -- não porque a
+      rede/roteadores intermediários estejam se comportando diferente).
+
+    Por isso o NOCPing cria as DUAS regras próprias (v4 e v6), sem escopo de
+    programa (libera pra qualquer processo, não só `System`).
 
     Chamado por MTRWorker/TracerouteWorker logo após confirmar is_admin() —
     criar regra de firewall exige admin, e essas duas telas já exigem admin
@@ -80,20 +99,21 @@ def ensure_icmp_time_exceeded_firewall_rule() -> None:
     _firewall_rule_ensured = True  # tenta no máximo uma vez por processo
 
     CREATE_NO_WINDOW = 0x08000000  # evita flash de janela de console num app --windowed
-    try:
-        subprocess.run(
-            ["netsh", "advfirewall", "firewall", "delete", "rule",
-             f"name={_ICMP_FIREWALL_RULE_NAME}"],
-            capture_output=True, timeout=5, creationflags=CREATE_NO_WINDOW,
-        )
-        subprocess.run(
-            ["netsh", "advfirewall", "firewall", "add", "rule",
-             f"name={_ICMP_FIREWALL_RULE_NAME}", "dir=in", "action=allow",
-             "protocol=icmpv4:11,any"],
-            capture_output=True, timeout=5, creationflags=CREATE_NO_WINDOW,
-        )
-    except Exception:
-        pass
+    for rule_name, protocol in _ICMP_FIREWALL_RULES.values():
+        try:
+            subprocess.run(
+                ["netsh", "advfirewall", "firewall", "delete", "rule",
+                 f"name={rule_name}"],
+                capture_output=True, timeout=5, creationflags=CREATE_NO_WINDOW,
+            )
+            subprocess.run(
+                ["netsh", "advfirewall", "firewall", "add", "rule",
+                 f"name={rule_name}", "dir=in", "action=allow",
+                 f"protocol={protocol}"],
+                capture_output=True, timeout=5, creationflags=CREATE_NO_WINDOW,
+            )
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

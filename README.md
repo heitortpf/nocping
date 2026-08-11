@@ -66,6 +66,16 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 
 ## Changelog
 
+### v2.0.3
+- **Fix: MTR/Traceroute só mostrava o salto final também em destinos IPv6**
+  — a regra embutida do Windows Firewall pra ICMPv6 Time Exceeded existe e
+  aparece habilitada, mas com escopo restrito ao processo `System` do
+  próprio Windows, não cobrindo uma aplicação comum como o NOCPing (por
+  isso o `tracert -6` nativo continuava funcionando normalmente, mascarando
+  o diagnóstico — ele roda como `System`). `ensure_icmp_time_exceeded_firewall_rule()`
+  agora cria uma regra própria também pra ICMPv6 (tipo 3), sem restrição de
+  programa, além da regra de ICMPv4 (tipo 11) já existente desde a v2.0.1.
+
 ### v2.0.2
 - **Auto-preenchimento de host:porta no Quick Ping e no Monitor** — digitar
   `1.1.1.1:53`, `8.8.8.8:53` ou `172.217.30.227:443` no campo de host separa
@@ -266,23 +276,33 @@ Windows trata qualquer download da internet, não é específico do NOCPing.
 
 ### ⚠ MTR/Traceroute só mostra o salto final ("* * *" nos saltos intermediários)
 
-Não é bug do NOCPing — é uma regra de entrada que falta no **Firewall do
-Windows** quando a rede está classificada como **Pública** (comum ao
-conectar numa Wi-Fi/rede nova pela primeira vez). O Windows tem, por padrão,
-uma regra de entrada liberando **ICMPv6** Time Exceeded, mas **não** a
-equivalente pra **ICMPv4** (tipo 11) — então qualquer ferramenta que manda
-ICMP por raw socket (inclusive o NOCPing) tem a resposta dos roteadores
-intermediários descartada pelo firewall antes de chegar no app. O `tracert`
-nativo do Windows não é afetado porque usa a API interna `ICMP.SYS`, que não
-passa pela mesma avaliação de regras.
+Não é bug do NOCPing — é o **Firewall do Windows** descartando a resposta
+dos roteadores intermediários antes de chegar no app, em raw socket (o
+`tracert` nativo do Windows não é afetado porque usa a API interna
+`ICMP.SYS`, que não passa pela mesma avaliação de regras). Desde a v2.0.3 o
+NOCPing cria as regras necessárias **automaticamente** assim que MTR ou
+Traceroute rodam como Administrador — esta seção é só pro caso raro de a
+criação automática falhar silenciosamente (rede corporativa restringindo
+`netsh`, política de grupo, etc.) e você precisar aplicar manualmente.
+
+Duas causas possíveis, uma pra cada família de IP:
+
+- **ICMPv4** — o Windows não vem com **nenhuma** regra de entrada pra Time
+  Exceeded (tipo 11), em nenhum perfil. Comum notar isso numa rede Wi-Fi
+  nova classificada como "Pública".
+- **ICMPv6** — o Windows *tem* uma regra embutida pra Time Exceeded (tipo 3),
+  mas com escopo restrito ao processo `System` do próprio Windows — não
+  cobre uma aplicação comum como o NOCPing. Passa despercebido porque o
+  `tracert -6` continua funcionando normalmente (ele roda como `System`).
 
 **Diagnóstico:** `Get-NetFirewallRule -Direction Inbound | Where DisplayName -match "ICMP"`
-— se não tiver nenhuma regra de entrada pra `ICMPv4`/tipo `11` habilitada
-pro perfil da sua rede, é isso.
+— se não tiver uma regra de entrada habilitada pra `ICMPv4`/tipo `11` **ou**
+`ICMPv6`/tipo `3` sem restrição de programa, é isso.
 
-**Fix**, numa janela **PowerShell como Administrador**:
+**Fix manual**, numa janela **PowerShell como Administrador**:
 ```powershell
 New-NetFirewallRule -DisplayName "ICMPv4 Time Exceeded (Entrada)" -Direction Inbound -Protocol ICMPv4 -IcmpType 11 -Action Allow -Profile Any
+New-NetFirewallRule -DisplayName "ICMPv6 Time Exceeded (Entrada)" -Direction Inbound -Protocol ICMPv6 -IcmpType 3 -Action Allow -Profile Any
 ```
 
 ---
