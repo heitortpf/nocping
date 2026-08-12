@@ -184,21 +184,30 @@ class MTRTab(WorkerTabMixin, QWidget):
         self._table = QTableWidget(0, len(headers))
         self._table.setHorizontalHeaderLabels(headers)
         hdr = self._table.horizontalHeader()
+        # Interactive (não Fixed) em todas as colunas exceto Hostname: dá pra
+        # arrastar a borda pra redimensionar, igual planilha — e Qt já trata
+        # duplo-clique na borda como "auto-ajustar ao conteúdo" de graça no
+        # modo Interactive, sem código extra. Hostname continua Stretch pra
+        # ocupar o espaço sobrando. Largura inicial da coluna IP subiu (150 →
+        # 190) porque IPv6 sem abreviar (ex: 2804:3230:88:5700:2eb:d8ff:...)
+        # cortava com "..." no tamanho antigo; ainda assim cabe redimensionar
+        # mais, e o tooltip por célula (ver _set_cell) mostra o valor
+        # completo mesmo sem redimensionar.
         for col, mode in [
-            (_COL_HOP,      QHeaderView.ResizeMode.Fixed),
-            (_COL_IP,       QHeaderView.ResizeMode.Fixed),
+            (_COL_HOP,      QHeaderView.ResizeMode.Interactive),
+            (_COL_IP,       QHeaderView.ResizeMode.Interactive),
             (_COL_HOSTNAME, QHeaderView.ResizeMode.Stretch),
-            (_COL_LOSS,     QHeaderView.ResizeMode.Fixed),
-            (_COL_SENT,     QHeaderView.ResizeMode.Fixed),
-            (_COL_LAST,     QHeaderView.ResizeMode.Fixed),
-            (_COL_AVG,      QHeaderView.ResizeMode.Fixed),
-            (_COL_BEST,     QHeaderView.ResizeMode.Fixed),
-            (_COL_WORST,    QHeaderView.ResizeMode.Fixed),
-            (_COL_STDEV,    QHeaderView.ResizeMode.Fixed),
+            (_COL_LOSS,     QHeaderView.ResizeMode.Interactive),
+            (_COL_SENT,     QHeaderView.ResizeMode.Interactive),
+            (_COL_LAST,     QHeaderView.ResizeMode.Interactive),
+            (_COL_AVG,      QHeaderView.ResizeMode.Interactive),
+            (_COL_BEST,     QHeaderView.ResizeMode.Interactive),
+            (_COL_WORST,    QHeaderView.ResizeMode.Interactive),
+            (_COL_STDEV,    QHeaderView.ResizeMode.Interactive),
         ]:
             hdr.setSectionResizeMode(col, mode)
         self._table.setColumnWidth(_COL_HOP,   46)
-        self._table.setColumnWidth(_COL_IP,    150)
+        self._table.setColumnWidth(_COL_IP,    190)
         self._table.setColumnWidth(_COL_LOSS,   70)
         self._table.setColumnWidth(_COL_SENT,   60)
         self._table.setColumnWidth(_COL_LAST,   80)
@@ -381,6 +390,10 @@ class MTRTab(WorkerTabMixin, QWidget):
             self._table.setItem(row, col, item)
         else:
             item.setText(text)
+        # Tooltip com o texto completo -- IP/hostname (IPv6 sobretudo) corta
+        # com "..." mesmo depois de aumentar a largura padrão da coluna;
+        # passar o mouse mostra o valor inteiro sem precisar redimensionar.
+        item.setToolTip(text)
         # color=None = cor padrão da tabela (palette(text)). Resolvida aqui
         # (não só "pular o setForeground") porque esta célula pode ser
         # reescrita depois com uma cor diferente (ex.: IP muda de "sem

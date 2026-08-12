@@ -132,13 +132,18 @@ class TracerouteTab(WorkerTabMixin, QWidget):
         self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(["Hop", "IP", "Hostname", "RTT", "Notas"])
         hdr = self._table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        # Interactive (não Fixed): dá pra arrastar a borda pra redimensionar,
+        # igual planilha -- e Qt já trata duplo-clique na borda como
+        # "auto-ajustar ao conteúdo" de graça no modo Interactive. Hostname
+        # continua Stretch pra ocupar o espaço sobrando. Ver mtr_tab.py, que
+        # tem a mesma mudança pelo mesmo motivo (IPv6 cortando com "...").
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
         self._table.setColumnWidth(0, 50)
-        self._table.setColumnWidth(1, 140)
+        self._table.setColumnWidth(1, 190)
         self._table.setColumnWidth(3, 100)
         self._table.setColumnWidth(4, 140)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -247,6 +252,9 @@ class TracerouteTab(WorkerTabMixin, QWidget):
             item = QTableWidgetItem(text)
             if color is not None:
                 item.setForeground(QColor(color))
+            # Tooltip com o texto completo -- ver mtr_tab.py::_set_cell,
+            # mesmo motivo (IP/hostname cortando com "...").
+            item.setToolTip(text)
             return item
 
         self._table.setItem(row, 0, cell(str(ttl),   DARK.text_muted))
