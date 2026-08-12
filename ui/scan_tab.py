@@ -215,9 +215,20 @@ class ScanTab(WorkerTabMixin, QWidget):
         self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(["Porta", "Proto", "Serviço", "RTT", "Status"])
         hdr = self._table.horizontalHeader()
-        hdr.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        # Interactive (não Fixed/Stretch) em Porta/Proto/RTT/Status: dá pra
+        # arrastar a borda pra redimensionar, igual planilha (mesmo padrão
+        # do MTR/Traceroute). "Serviço" continua Stretch -- é o campo mais
+        # variável (nome de serviço via socket.getservbyport) e ocupa o
+        # espaço sobrando.
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
+        self._table.setColumnWidth(0, 70)
         self._table.setColumnWidth(1, 60)
+        self._table.setColumnWidth(3, 90)
+        self._table.setColumnWidth(4, 130)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setAlternatingRowColors(True)
@@ -341,6 +352,7 @@ class ScanTab(WorkerTabMixin, QWidget):
             item = QTableWidgetItem(text)
             if color is not None:
                 item.setForeground(QColor(color))
+            item.setToolTip(text)  # valor completo ao passar o mouse
             return item
 
         self._table.setItem(row, 0, cell(str(port),      DARK.success))

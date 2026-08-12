@@ -111,9 +111,13 @@ class HistoryDialog(QDialog):
         self._table = QTableWidget(0, len(headers))
         self._table.setHorizontalHeaderLabels(headers)
         hdr = self._table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        # Interactive (não Fixed) em Timestamp/Status/RTT: dá pra arrastar a
+        # borda pra redimensionar, igual planilha (mesmo padrão do
+        # MTR/Traceroute/Port Scan). "Nota" continua Stretch -- é texto
+        # livre, o campo mais variável, ocupa o espaço sobrando.
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self._table.setColumnWidth(0, 170)
         self._table.setColumnWidth(1, 80)
@@ -213,6 +217,7 @@ class HistoryDialog(QDialog):
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
         item.setForeground(QColor(color))
+        item.setToolTip(text)  # valor completo ao passar o mouse
         self._table.setItem(row, col, item)
 
     def _export_csv(self):

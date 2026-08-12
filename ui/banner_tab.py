@@ -251,6 +251,7 @@ class BannerTab(WorkerTabMixin, QWidget):
                 item = QTableWidgetItem(val)
                 if color is not None:
                     item.setForeground(QColor(color))
+                item.setToolTip(val)  # CN/cifra podem ser longos e cortar
                 self._tls_table.setItem(i, 1, item)
         else:
             self._lbl_tls_status.setText("Sem TLS detectado")
