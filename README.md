@@ -66,6 +66,16 @@ Ferramenta de diagnóstico de rede para analistas NOC, desenvolvida em Python + 
 
 ## Changelog
 
+### v2.0.4
+- **Colunas redimensionáveis nas tabelas (estilo planilha)** — MTR,
+  Traceroute, Port Scan e o diálogo de Histórico de RTT agora permitem
+  arrastar a borda das colunas pra redimensionar (antes eram largura fixa);
+  duplo-clique na borda auto-ajusta ao conteúdo. Corrige IPv6 sem abreviar
+  cortando com "..." nas tabelas de MTR/Traceroute — a coluna IP também
+  ganhou mais largura por padrão (150 → 190px). Toda célula dessas tabelas
+  (mais Banner/TLS) ganhou tooltip com o valor completo, visível mesmo sem
+  redimensionar.
+
 ### v2.0.3
 - **Fix: MTR/Traceroute só mostrava o salto final também em destinos IPv6**
   — a regra embutida do Windows Firewall pra ICMPv6 Time Exceeded existe e
